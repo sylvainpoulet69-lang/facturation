@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>FacturePro — Tennis & Padel Club Nice</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--soft:#f8fafc;
+  --blue:#1d4ed8;--blue-light:#eff6ff;--green:#10b981;--green-light:#d1fae5;
+  --red:#ef4444;--red-light:#fee2e2;--yellow:#f59e0b;--yellow-light:#fef3c7;
+  --purple:#8b5cf6;--sidebar:#0f172a;--dark:#1e293b;--darker:#0f172a;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f9;color:var(--ink);min-height:100vh;display:flex;}
+
+/* ── SIDEBAR ── */
+#sidebar{width:200px;background:var(--sidebar);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;height:100vh;z-index:100;}
+#sidebar .brand{padding:18px 14px 14px;border-bottom:1px solid #1e293b;}
+#sidebar .brand .sub{font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}
+#sidebar .brand h1{font-size:15px;font-weight:900;color:#fff;}
+#sidebar nav{padding:10px 7px;flex:1;}
+#sidebar nav button{width:100%;text-align:left;background:transparent;color:#fff;border:none;border-radius:10px;padding:11px 11px;margin-bottom:2px;cursor:pointer;font-size:14px;font-weight:500;display:flex;align-items:center;gap:7px;opacity:.7;font-family:inherit;transition:all .15s;}
+#sidebar nav button .ico{font-size:17px;flex-shrink:0;}
+#sidebar nav button .lbl{flex:1;}
+#sidebar nav button .badge{background:#ef4444;color:#fff;border-radius:20px;padding:1px 7px;font-size:10px;font-weight:800;}
+#sidebar nav button.active{background:#1d4ed8;opacity:1;font-weight:800;}
+#sidebar nav button.highlight{background:#10b981;opacity:1;font-weight:700;}
+#sidebar nav button.highlight.active{background:#059669;}
+#sidebar .sidebar-foot{padding:8px 11px 18px;}
+#sidebar .sidebar-foot .card{background:#1e293b;border-radius:9px;padding:9px 11px;}
+#sidebar .sidebar-foot .card .n{font-size:11px;color:#94a3b8;font-weight:700;}
+#sidebar .sidebar-foot .card .s{font-size:10px;color:#475569;margin-top:2px;}
+
+/* ── MAIN ── */
+#main{margin-left:200px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
+#topbar{background:#fff;border-bottom:1px solid var(--line);padding:10px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50;}
+#topbar .page-info{font-size:12px;color:#94a3b8;}
+#topbar .topbar-right{display:flex;align-items:center;gap:10px;}
+#content{flex:1;padding:22px 24px;overflow-y:auto;}
+
+/* ── STAFF BADGE ── */
+.staff-badge{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:#f9fafb;color:var(--muted);cursor:pointer;font-family:inherit;}
+.staff-badge.connected{background:#d1fae5;border-color:#22c55e;color:#065f46;font-weight:700;}
+#alertBar{display:none;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700;padding:5px 24px;cursor:pointer;}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:24px;right:24px;background:#10b981;color:#fff;border-radius:14px;padding:12px 20px;font-weight:700;font-size:14px;box-shadow:0 8px 28px rgba(0,0,0,.22);z-index:2000;display:none;}
+
+/* ── MODAL ── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:500;display:none;align-items:center;justify-content:center;padding:16px;}
+.modal-backdrop.open{display:flex;}
+.modal{background:#fff;border-radius:18px;width:100%;max-width:580px;max-height:90vh;overflow-y:auto;box-shadow:0 28px 60px rgba(0,0,0,.3);}
+.modal-head{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:1;}
+.modal-head h3{font-size:16px;font-weight:800;}
+.modal-close{background:#f1f5f9;border:none;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;color:var(--muted);display:flex;align-items:center;justify-content:center;}
+.modal-body{padding:20px 22px;}
+
+/* ── BUTTONS ── */
+.btn{border:none;border-radius:10px;padding:10px 18px;font-weight:700;cursor:pointer;font-family:inherit;font-size:14px;display:inline-flex;align-items:center;gap:6px;transition:opacity .12s;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-primary{background:#1d4ed8;color:#fff;}
+.btn-green{background:#10b981;color:#fff;}
+.btn-dark{background:#0f172a;color:#fff;}
+.btn-soft{background:#f1f5f9;color:#0f172a;}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px;}
+.btn-full{width:100%;justify-content:center;}
+.btn-danger{background:#fee2e2;color:#991b1b;}
+
+/* ── INPUTS ── */
+.inp{border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;font-family:inherit;outline:none;width:100%;background:#fff;transition:border .12s;}
+.inp:focus{border-color:#1d4ed8;}
+.inp-sm{padding:6px 9px;font-size:12px;border-radius:7px;}
+.inp-dark{background:#1e293b;border-color:#334155;color:#e2e8f0;}
+.inp-dark:focus{border-color:#3b82f6;}
+label.lbl{font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;}
+
+/* ── BADGE STATUT ── */
+.bdg{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
+.bdg .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.bdg-payee{background:#d1fae5;color:#065f46;}.bdg-payee .dot{background:#10b981;}
+.bdg-envoyee{background:#dbeafe;color:#1e40af;}.bdg-envoyee .dot{background:#3b82f6;}
+.bdg-retard{background:#fee2e2;color:#991b1b;}.bdg-retard .dot{background:#ef4444;}
+.bdg-partiel{background:#fef3c7;color:#92400e;}.bdg-partiel .dot{background:#f59e0b;}
+.bdg-avoir{background:#ede9fe;color:#5b21b6;}.bdg-avoir .dot{background:#8b5cf6;}
+.bdg-annulee{background:#fce7f3;color:#9d174d;}.bdg-annulee .dot{background:#ec4899;}
+.bdg-brouillon{background:#f1f5f9;color:#475569;}.bdg-brouillon .dot{background:#94a3b8;}
+
+/* ── CARDS ── */
+.card{background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.card-pad{padding:18px 20px;}
+
+/* ── TABLES ── */
+.tbl{width:100%;border-collapse:collapse;}
+.tbl thead tr{background:#f8fafc;border-bottom:2px solid var(--line);}
+.tbl thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.tbl tbody tr{border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .1s;}
+.tbl tbody tr:hover{background:#f8fafc;}
+.tbl tbody tr.sel{background:#eff6ff;}
+.tbl tbody td{padding:10px 12px;font-size:13px;}
+
+/* ── CAISSE ── */
+#caisse-wrap{display:flex;flex-direction:column;height:calc(100vh - 100px);gap:12px;}
+#caisse-client{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+#caisse-main{display:flex;gap:12px;flex:1;min-height:0;}
+#produits-zone{flex:1;display:flex;flex-direction:column;min-width:0;}
+#cats{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;}
+.cat-btn{padding:5px 12px;border-radius:20px;border:2px solid var(--line);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted);transition:all .12s;}
+.cat-btn.active{background:#1d4ed8;border-color:#1d4ed8;color:#fff;}
+#produits-grid{flex:1;overflow-y:auto;}
+#produits-grid .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;}
+.prod-btn{background:#fff;border:2px solid var(--line);border-radius:13px;padding:12px 8px;cursor:pointer;text-align:center;position:relative;transition:all .13s;font-family:inherit;}
+.prod-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1);}
+.prod-btn.in-cart{color:#fff;}
+.prod-btn .qbadge{position:absolute;top:5px;right:7px;background:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;}
+.prod-btn .pemoji{font-size:24px;margin-bottom:5px;}
+.prod-btn .pnom{font-size:11px;font-weight:700;line-height:1.3;margin-bottom:3px;}
+.prod-btn .pprix{font-size:13px;font-weight:900;}
+
+/* ── PANIER (dark) ── */
+#panier-zone{width:290px;background:#0f172a;border-radius:17px;padding:14px;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+#panier-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+#panier-header span{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;}
+#panier-header button{background:#1e293b;border:none;border-radius:5px;color:#ef4444;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700;}
+#panier-items{flex:1;overflow-y:auto;margin-bottom:8px;}
+.panier-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#334155;gap:8px;}
+.panier-empty .ico{font-size:36px;}
+.panier-empty .txt{font-size:12px;color:#475569;text-align:center;}
+.panier-ligne{background:#1e293b;border-radius:10px;margin-bottom:6px;overflow:hidden;}
+.panier-ligne .pl-head{padding:9px 11px;cursor:pointer;}
+.panier-ligne .pl-head .pl-top{display:flex;justify-content:space-between;align-items:center;}
+.panier-ligne .pl-nom{font-size:12.5px;font-weight:700;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.panier-ligne .pl-sub{font-size:10px;color:#64748b;margin-top:1px;}
+.panier-ligne .pl-prix{font-size:13px;font-weight:900;margin-left:6px;flex-shrink:0;}
+.panier-ligne .pl-edit{background:#0f172a;padding:10px 11px;border-top:1px solid #334155;}
+.pl-edit-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px;}
+.pl-edit-grid .eg{display:flex;flex-direction:column;}
+.pl-edit-grid label{font-size:9px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px;}
+.pl-edit-grid input{background:#1e293b;border:1.5px solid #334155;border-radius:6px;color:#fbbf24;padding:4px 7px;font-size:12px;font-weight:700;font-family:inherit;width:100%;}
+.qte-ctrl{display:flex;align-items:center;gap:4px;}
+.qte-ctrl button{width:24px;height:24px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#e2e8f0;cursor:pointer;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;}
+.qte-ctrl span{color:#fff;font-weight:800;min-width:16px;text-align:center;}
+.pl-edit-foot{display:flex;justify-content:space-between;align-items:center;}
+.pl-edit-foot .detail{font-size:10px;color:#475569;}
+.pl-edit-foot button{background:#fee2e2;border:none;border-radius:5px;color:#ef4444;padding:3px 8px;cursor:pointer;font-size:10px;font-weight:700;}
+
+/* ── PAIEMENT ── */
+#paiement-zone{border-top:1px solid #1e293b;padding-top:12px;margin-top:auto;}
+.total-bar{display:flex;justify-content:space-between;align-items:center;background:#1e293b;border-radius:9px;padding:9px 13px;margin-bottom:10px;}
+.total-bar .tlbl{font-size:13px;font-weight:700;color:#94a3b8;}
+.total-bar .tval{font-size:20px;font-weight:900;color:#10b981;}
+.staff-select{margin-bottom:8px;}
+.staff-btns{display:flex;gap:5px;flex-wrap:wrap;}
+.staff-btn{padding:5px 10px;border-radius:7px;border:2px solid #334155;font-size:11.5px;font-weight:700;cursor:pointer;background:#1e293b;color:#fff;font-family:inherit;transition:all .12s;}
+.staff-btn.sel{background:#10b981;border-color:#10b981;}
+.pay-lignes{margin-bottom:7px;}
+.pay-ligne{display:flex;gap:5px;margin-bottom:5px;align-items:center;}
+.pay-mode{background:#1e293b;border:1.5px solid #334155;border-radius:7px;color:#e2e8f0;padding:6px 7px;font-size:11px;font-family:inherit;min-width:80px;}
+.pay-montant{flex:1;background:#1e293b;border:1.5px solid #334155;border-radius:7px;color:#fbbf24;padding:6px 7px;font-size:13px;font-weight:700;font-family:inherit;}
+.pay-note{flex:1;background:#1e293b;border:1.5px solid #334155;border-radius:7px;color:#64748b;padding:6px 7px;font-size:11px;font-family:inherit;}
+.pay-rm{background:#1e293b;border:none;border-radius:5px;color:#ef4444;cursor:pointer;padding:4px 7px;font-size:11px;}
+.add-mode-btn{width:100%;background:transparent;border:1px dashed #334155;border-radius:7px;color:#475569;padding:5px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;margin-bottom:7px;}
+.especes-bloc{background:#1e293b;border-radius:8px;padding:8px 10px;margin-bottom:7px;}
+.especes-bloc .elbl{font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:5px;}
+.especes-row{display:flex;gap:6px;align-items:center;margin-bottom:5px;}
+.especes-row input{flex:1;background:#0f172a;border:1.5px solid #334155;border-radius:6px;color:#fff;padding:6px 8px;font-size:13px;font-weight:700;font-family:inherit;}
+.especes-row .rendu{font-size:16px;font-weight:900;min-width:50px;text-align:right;}
+.especes-shortcuts{display:flex;gap:3px;flex-wrap:wrap;}
+.especes-shortcuts button{background:#0f172a;border:1px solid #334155;border-radius:5px;color:#e2e8f0;padding:2px 8px;cursor:pointer;font-weight:700;font-size:11px;font-family:inherit;}
+.reste-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
+.reste-bar .rv{font-size:12px;color:#ef4444;font-weight:700;}
+.sur-compte-btn{background:#fef3c7;border:none;border-radius:7px;color:#92400e;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;}
+.note-vente{width:100%;background:#1e293b;border:1.5px solid #334155;border-radius:7px;color:#64748b;padding:6px 9px;font-size:11px;font-family:inherit;margin-bottom:8px;resize:none;}
+.encaisser-btn{width:100%;border:none;border-radius:11px;padding:13px;font-weight:900;font-size:14px;cursor:pointer;font-family:inherit;transition:all .18s;}
+.encaisser-btn.ready{background:#10b981;color:#fff;}
+.encaisser-btn.not-ready{background:#1e293b;color:#475569;cursor:not-allowed;}
+
+/* ── HISTORIQUE JOUR ── */
+#histo-jour{border-top:1px solid #1e293b;padding-top:10px;margin-top:6px;}
+#histo-jour .hlbl{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;margin-bottom:5px;}
+#histo-items{display:flex;gap:5px;flex-wrap:wrap;}
+.histo-chip{background:#1e293b;border-radius:6px;padding:3px 8px;font-size:10px;}
+.histo-chip .hid{color:#64748b;}
+.histo-chip .hamt{color:#10b981;font-weight:700;margin-left:4px;}
+.histo-chip .hcli{color:#475569;margin-left:3px;}
+
+/* ── CLIENT SEARCH ── */
+#cli-search-wrap{}
+.cli-search-bar{display:flex;gap:7px;margin-bottom:8px;}
+.cli-search-bar input{flex:1;}
+.cli-selected{background:#eff6ff;border:2px solid #1d4ed8;border-radius:13px;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;}
+.cli-selected .cl-info{display:flex;gap:10px;align-items:center;}
+.cli-selected .cl-av{width:40px;height:40px;border-radius:50%;background:#1d4ed8;display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff;font-size:14px;flex-shrink:0;}
+.cli-selected .cl-name{font-weight:800;font-size:15px;color:#1e40af;}
+.cli-selected .cl-sub{font-size:12px;color:#3b82f6;margin-top:2px;}
+.cli-selected .cl-chg{background:#dbeafe;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700;font-size:12px;color:#1d4ed8;font-family:inherit;}
+.cli-hint{margin-top:6px;font-size:11px;color:#f59e0b;font-weight:600;text-align:center;}
+.cli-sections{display:flex;flex-direction:column;gap:8px;}
+.cli-section-lbl{font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.cli-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.cli-card{background:#fff;border:2px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;text-align:left;width:100%;font-family:inherit;transition:all .1s;}
+.cli-card:hover,.cli-card.sel{background:#eff6ff;border-color:#1d4ed8;}
+.cli-card-inner{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.cli-card-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;flex-shrink:0;}
+.cli-card-info{flex:1;min-width:0;}
+.cli-card-name{font-size:13px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cli-card-tel{font-size:10px;color:#64748b;}
+.cli-card-alerte{font-size:9px;color:#ef4444;font-weight:700;}
+.cli-card-right{text-align:right;flex-shrink:0;}
+.cli-card-solde{font-size:13px;font-weight:800;}
+.cli-card-fid{font-size:10px;color:#f59e0b;font-weight:700;}
+.anon-btn{width:100%;background:none;border:2px dashed var(--line);border-radius:9px;padding:7px;cursor:pointer;color:#94a3b8;font-weight:600;font-size:11px;font-family:inherit;margin-top:7px;}
+.nouveau-cli-form{background:#f0fdf4;border:2px solid #bbf7d0;border-radius:13px;padding:13px;margin-bottom:8px;}
+.nouveau-cli-form .form-title{font-weight:700;color:#065f46;font-size:12px;margin-bottom:8px;}
+.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.form-row{display:flex;flex-direction:column;}
+.form-row label{font-size:11px;font-weight:600;color:#475569;margin-bottom:3px;}
+.form-actions{display:flex;gap:7px;}
+
+/* ── TICKET ── */
+#ticket-overlay{position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:600;display:none;align-items:center;justify-content:center;}
+#ticket-overlay.open{display:flex;}
+.ticket-card{background:#fff;border-radius:18px;max-width:440px;width:100%;overflow:hidden;box-shadow:0 28px 60px rgba(0,0,0,.35);}
+.ticket-top{background:linear-gradient(135deg,#059669,#10b981);padding:22px 28px;text-align:center;}
+.ticket-top .ti{font-size:44px;margin-bottom:5px;}
+.ticket-top .tt{font-size:18px;font-weight:900;color:#fff;margin-bottom:3px;}
+.ticket-top .ta{font-size:30px;font-weight:900;color:#fff;}
+.ticket-body{padding:16px 24px;font-family:monospace;font-size:12px;}
+.ticket-row{display:flex;justify-content:space-between;margin-bottom:3px;color:#475569;}
+.ticket-row .k{color:#6b7280;}
+.ticket-row .v{font-weight:700;color:#0f172a;}
+.ticket-sep{border:none;border-top:1px dashed #e2e8f0;margin:8px 0;}
+.ticket-total-row{display:flex;justify-content:space-between;border-top:2px solid #0f172a;padding-top:5px;margin-top:3px;font-weight:900;font-size:13px;}
+.ticket-actions{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:9px;}
+
+/* ── DASHBOARD ── */
+.kpi-grid{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;}
+.kpi{background:#fff;border-radius:13px;padding:16px 14px;flex:1 1 130px;box-shadow:0 2px 9px rgba(0,0,0,.06);}
+.kpi .ki{font-size:22px;margin-bottom:3px;}
+.kpi .kv{font-size:21px;font-weight:900;font-family:Georgia,serif;}
+.kpi .kl{font-size:11px;color:#6b7280;font-weight:600;}
+.cta-caisse{background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:16px;padding:18px 22px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}
+.cta-caisse .ct{color:#fff;font-size:16px;font-weight:900;margin-bottom:3px;}
+.cta-caisse .cs{color:#94a3b8;font-size:12px;}
+.cta-caisse button{background:#10b981;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;}
+
+/* ── CLIENTS PAGE ── */
+.client-row{background:#fff;border-radius:13px;padding:14px 16px;box-shadow:0 2px 7px rgba(0,0,0,.05);cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.cr-left{display:flex;gap:10px;align-items:center;}
+.cr-av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;flex-shrink:0;position:relative;}
+.cr-av .star{position:absolute;top:-2px;right:-2px;font-size:10px;}
+.cr-info .cr-name{font-weight:700;font-size:14px;color:#0f172a;}
+.cr-info .cr-sub{font-size:11px;color:#64748b;}
+.cr-tags{display:flex;gap:3px;margin-top:3px;flex-wrap:wrap;}
+.cr-tag{background:#f1f5f9;color:#475569;border-radius:20px;padding:2px 7px;font-size:10px;font-weight:700;}
+.cr-tag-fft{background:#d1fae5;color:#065f46;}
+.cr-tag-warn{background:#fce7f3;color:#9d174d;}
+.cr-right{text-align:right;flex-shrink:0;}
+.cr-solde{font-size:13px;font-weight:800;}
+.cr-fid{font-size:11px;color:#f59e0b;font-weight:700;}
+.cr-imp{font-size:11px;color:#ef4444;font-weight:700;}
+
+/* ── FACTURES PAGE ── */
+.filters{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;}
+.flt-btn{padding:5px 11px;border-radius:20px;border:2px solid var(--line);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted);}
+.flt-btn.active{background:#1d4ed8;border-color:#1d4ed8;color:#fff;}
+.facture-detail{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 4px 18px rgba(0,0,0,.09);border:2px solid #dbeafe;margin-top:14px;}
+.fd-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
+.fd-id{font-size:17px;font-weight:900;color:#1d4ed8;}
+.fd-cli{font-size:12px;color:#64748b;}
+.fd-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:12px;}
+.fd-stat{background:#f8fafc;border-radius:9px;padding:9px 11px;text-align:center;}
+.fd-stat .sv{font-size:18px;font-weight:900;}
+.fd-stat .sk{font-size:10px;color:#94a3b8;font-weight:700;margin-top:1px;}
+.pay-hist{background:#f0fdf4;border-radius:7px;padding:5px 11px;margin-bottom:3px;display:flex;justify-content:space-between;font-size:11px;border:1px solid #bbf7d0;}
+.pay-hist .pm{color:#6b7280;}
+.pay-hist .pa{font-weight:800;color:#065f46;}
+
+/* ── PRINT ── */
+@media print{
+  #sidebar,#topbar,#alertBar,#toast,#ticket-overlay,.modal-backdrop{display:none!important;}
+  #main{margin-left:0;}
+  body{background:#fff;}
+}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  #sidebar{width:60px;}
+  #sidebar .brand .sub,#sidebar .brand h1,#sidebar nav button .lbl,#sidebar nav button .badge,#sidebar .sidebar-foot{display:none;}
+  #sidebar nav button{justify-content:center;padding:11px 0;}
+  #main{margin-left:60px;}
+  #caisse-main{flex-direction:column;}
+  #panier-zone{width:100%;}
+  #content{padding:14px 12px;}
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="brand">
+    <div class="sub">Tennis & Padel</div>
+    <h1>🎾 FacturePro</h1>
+  </div>
+  <nav>
+    <button onclick="showPage('caisse')" id="nav-caisse" class="highlight">
+      <span class="ico">🛒</span><span class="lbl">Caisse</span>
+    </button>
+    <button onclick="showPage('factures')" id="nav-factures">
+      <span class="ico">🧾</span><span class="lbl">Factures</span>
+      <span class="badge" id="badge-retard" style="display:none">0</span>
+    </button>
+    <button onclick="showPage('clients')" id="nav-clients">
+      <span class="ico">👥</span><span class="lbl">Clients</span>
+    </button>
+    <button onclick="showPage('dashboard')" id="nav-dashboard">
+      <span class="ico">📊</span><span class="lbl">Dashboard</span>
+    </button>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="card">
+      <div class="n">Tennis & Padel Club Nice</div>
+      <div class="s">SIRET : 123 456 789 00012</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="alertBar" onclick="showPage('factures')"></div>
+  <div id="topbar">
+    <span class="page-info" id="topbar-info">Caisse</span>
+    <div class="topbar-right">
+      <div id="sync-status" style="font-size:11px;color:#94a3b8;display:none;">⏳ Sync…</div>
+      <div id="staff-badge" class="staff-badge" onclick="openStaffModal()">👤 Non connecté</div>
+    </div>
+  </div>
+  <div id="content"></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- TICKET OVERLAY -->
+<div id="ticket-overlay">
+  <div class="ticket-card" id="ticket-card"></div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-backdrop" id="modal-staff">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-head"><h3>🔐 Connexion staff</h3><button class="modal-close" onclick="closeModal('modal-staff')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row" style="margin-bottom:12px;">
+        <label class="lbl">Code employé</label>
+        <input class="inp" id="staff-code-input" type="password" placeholder="Votre code…" onkeydown="if(event.key==='Enter')doStaffLogin()"/>
+      </div>
+      <button class="btn btn-green btn-full" onclick="doStaffLogin()">✓ Connexion</button>
+      <div style="text-align:center;margin-top:10px;">
+        <button onclick="doStaffLogout();closeModal('modal-staff')" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:12px;">Se déconnecter</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-paiement-facture">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-head"><h3 id="mpf-title">Enregistrer un paiement</h3><button class="modal-close" onclick="closeModal('modal-paiement-facture')">✕</button></div>
+    <div class="modal-body" id="mpf-body"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-fiche-client">
+  <div class="modal" style="max-width:660px;">
+    <div class="modal-head"><h3 id="mfc-title">Fiche client</h3><button class="modal-close" onclick="closeModal('modal-fiche-client')">✕</button></div>
+    <div class="modal-body" id="mfc-body"></div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+// CONFIG — METS TON URL APPS SCRIPT ICI APRÈS DÉPLOIEMENT
+// ================================================================
+var BACKEND_URL = ""; // ← ex: "https://script.google.com/macros/s/AKfy.../exec"
+var APP_SECRET  = "tpcnice2026"; // ← même valeur que dans Code.gs
+
+// ================================================================
+// ÉTAT GLOBAL
+// ================================================================
+var currentStaff   = null;
+var currentPage    = "caisse";
+
+// Données en mémoire
+var clients   = {};  // clé = id client
+var produits  = [];
+var factures  = [];  // tableau
+
+var STORAGE_CLIENTS  = "fp_clients_v1";
+var STORAGE_PRODUITS = "fp_produits_v1";
+var STORAGE_FACTURES = "fp_factures_v1";
+var STORAGE_STAFF    = "fp_staff_v1";
+
+// ── État caisse
+var panier         = [];
+var caisseClientId = null;
+var caisseAnonyme  = false;
+var caisseStaff    = "";
+var panierEditIdx  = -1;
+var payLignes      = [];
+var especesVal     = "";
+var noteVente      = "";
+
+// ── État pages
+var facturesFlt    = "tous";
+var facturesQ      = "";
+var selectedFacId  = null;
+var clientsQ       = "";
+
+// ================================================================
+// INIT
+// ================================================================
+window.onload = function() {
+  loadLocal();
+  renderPage();
+  if (BACKEND_URL) {
+    refreshFromServer();
+  } else {
+    loadDefaultProduits();
+  }
+};
+
+function loadLocal() {
+  try { clients  = JSON.parse(localStorage.getItem(STORAGE_CLIENTS))  || {}; } catch(e){ clients = {}; }
+  try { produits = JSON.parse(localStorage.getItem(STORAGE_PRODUITS)) || []; } catch(e){ produits = []; }
+  try { factures = JSON.parse(localStorage.getItem(STORAGE_FACTURES)) || []; } catch(e){ factures = []; }
+  try {
+    var st = JSON.parse(localStorage.getItem(STORAGE_STAFF));
+    if (st && st.code) { currentStaff = st; updateStaffUI(); }
+  } catch(e){}
+}
+
+function saveLocal() {
+  try { localStorage.setItem(STORAGE_CLIENTS,  JSON.stringify(clients));  } catch(e){}
+  try { localStorage.setItem(STORAGE_PRODUITS, JSON.stringify(produits)); } catch(e){}
+  try { localStorage.setItem(STORAGE_FACTURES, JSON.stringify(factures)); } catch(e){}
+}
+
+function loadDefaultProduits() {
+  if (produits.length > 0) return;
+  produits = [
+    {id:"prod_001",nom:"École Tennis – Mensuel",emoji:"🎾",cat:"abonnement",prix:120,tva:20,couleur:"#3b82f6"},
+    {id:"prod_002",nom:"École Padel – Mensuel", emoji:"🏓",cat:"abonnement",prix:110,tva:20,couleur:"#8b5cf6"},
+    {id:"prod_003",nom:"Adhésion Annuelle",     emoji:"⭐",cat:"abonnement",prix:60, tva:20,couleur:"#f97316"},
+    {id:"prod_004",nom:"Cours Particulier 1h",  emoji:"🎯",cat:"cours",      prix:55, tva:20,couleur:"#14b8a6"},
+    {id:"prod_005",nom:"Cours Collectifs Trim.",emoji:"👥",cat:"cours",      prix:195,tva:20,couleur:"#10b981"},
+    {id:"prod_006",nom:"Stage Intensif",        emoji:"🏆",cat:"stage",      prix:280,tva:20,couleur:"#f59e0b"},
+    {id:"prod_007",nom:"Animation Enfants",     emoji:"🧒",cat:"animation",  prix:35, tva:20,couleur:"#ec4899"},
+    {id:"prod_008",nom:"Tournoi",               emoji:"🥇",cat:"evenement",  prix:45, tva:20,couleur:"#ef4444"},
+    {id:"prod_009",nom:"Location Terrain 1h",   emoji:"📍",cat:"location",   prix:18, tva:20,couleur:"#06b6d4"},
+    {id:"prod_010",nom:"Pack 10 Séances",       emoji:"📦",cat:"pack",       prix:480,tva:20,couleur:"#6366f1"},
+    {id:"prod_011",nom:"Raquette Débutant",     emoji:"🛍️",cat:"boutique",   prix:29, tva:20,couleur:"#84cc16"},
+    {id:"prod_012",nom:"Balles × 3",            emoji:"🟡",cat:"boutique",   prix:8,  tva:20,couleur:"#eab308"},
+    {id:"prod_013",nom:"Grip",                  emoji:"🖐️",cat:"boutique",   prix:6,  tva:20,couleur:"#a3e635"},
+    {id:"prod_014",nom:"Boisson Isotonique",    emoji:"🥤",cat:"boutique",   prix:3.5,tva:20,couleur:"#fb923c"},
+  ];
+  saveLocal();
+}
+
+// ================================================================
+// BACKEND
+// ================================================================
+function api(payload, cb) {
+  if (!BACKEND_URL) { if(cb) cb(null, "Backend non configuré"); return; }
+  payload.secret = APP_SECRET;
+  setSyncStatus(true);
+  fetch(BACKEND_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){ setSyncStatus(false); if(cb) cb(d); })
+  .catch(function(e){ setSyncStatus(false); if(cb) cb(null, e.toString()); });
+}
+
+function setSyncStatus(on) {
+  var el = document.getElementById("sync-status");
+  if(el) el.style.display = on ? "block" : "none";
+}
+
+function refreshFromServer() {
+  api({action:"listClients"}, function(d){
+    if(d && d.ok && d.clients) {
+      d.clients.forEach(function(c){ clients[c.id] = c; });
+      saveLocal();
+    }
+  });
+  api({action:"listProduits"}, function(d){
+    if(d && d.ok && d.produits && d.produits.length) {
+      produits = d.produits;
+      saveLocal();
+      if(currentPage==="caisse") renderPage();
+    } else {
+      loadDefaultProduits();
+    }
+  });
+  api({action:"listFactures"}, function(d){
+    if(d && d.ok && d.factures) {
+      factures = d.factures;
+      saveLocal();
+      updateBadges();
+      if(currentPage==="factures"||currentPage==="dashboard") renderPage();
+    }
+  });
+}
+
+// ================================================================
+// STAFF
+// ================================================================
+function openStaffModal() { openModal("modal-staff"); document.getElementById("staff-code-input").value=""; }
+
+function doStaffLogin() {
+  var code = (document.getElementById("staff-code-input").value || "").trim().toUpperCase();
+  if (!code) { showToast("Saisis ton code", "#ef4444"); return; }
+
+  if (BACKEND_URL) {
+    api({action:"staffLogin", code:code, secret:""}, function(d){
+      if(d && d.ok && d.staff) {
+        currentStaff = d.staff;
+        localStorage.setItem(STORAGE_STAFF, JSON.stringify(currentStaff));
+        updateStaffUI();
+        closeModal("modal-staff");
+        showToast("Connecté : " + currentStaff.nom);
+        caisseStaff = currentStaff.nom;
+        if(currentPage==="caisse") renderPage();
+      } else {
+        showToast("Code invalide", "#ef4444");
+      }
+    });
+  } else {
+    // Mode offline : accepte n'importe quel code
+    currentStaff = {code:code, nom:code, role:"staff"};
+    localStorage.setItem(STORAGE_STAFF, JSON.stringify(currentStaff));
+    updateStaffUI();
+    closeModal("modal-staff");
+    caisseStaff = currentStaff.nom;
+    showToast("Connecté : " + currentStaff.nom);
+    if(currentPage==="caisse") renderPage();
+  }
+}
+
+function doStaffLogout() {
+  currentStaff = null;
+  localStorage.removeItem(STORAGE_STAFF);
+  updateStaffUI();
+  caisseStaff = "";
+  showToast("Déconnecté");
+}
+
+function updateStaffUI() {
+  var el = document.getElementById("staff-badge");
+  if (!el) return;
+  if (currentStaff) {
+    el.textContent = "👤 " + currentStaff.nom;
+    el.className = "staff-badge connected";
+  } else {
+    el.textContent = "👤 Non connecté";
+    el.className = "staff-badge";
+  }
+}
+
+// ================================================================
+// NAVIGATION
+// ================================================================
+function showPage(page) {
+  currentPage = page;
+  ["caisse","factures","clients","dashboard"].forEach(function(p){
+    var btn = document.getElementById("nav-"+p);
+    if(!btn) return;
+    btn.className = "highlight"===btn.className.split(" ").find(function(c){return c==="highlight";}) || p==="caisse"
+      ? (p===page ? "highlight active" : "highlight")
+      : (p===page ? "active" : "");
+    // recalc
+    btn.className = "";
+    if(p==="caisse") btn.className = (page===p) ? "highlight active" : "highlight";
+    else btn.className = (page===p) ? "active" : "";
+  });
+  var info = {caisse:"🛒 Caisse — Encaissement", factures:"🧾 Factures", clients:"👥 Clients", dashboard:"📊 Dashboard"};
+  document.getElementById("topbar-info").textContent = info[page]||page;
+  renderPage();
+}
+
+function renderPage() {
+  updateBadges();
+  if (currentPage==="caisse")    renderCaisse();
+  else if(currentPage==="factures") renderFactures();
+  else if(currentPage==="clients")  renderClients();
+  else if(currentPage==="dashboard")renderDashboard();
+}
+
+function updateBadges() {
+  var nb = factures.filter(function(f){return f.statut==="en retard";}).length;
+  var badge = document.getElementById("badge-retard");
+  if(badge){ badge.textContent=nb; badge.style.display=nb>0?"inline":"none"; }
+  var ab = document.getElementById("alertBar");
+  if(ab){ if(nb>0){ab.textContent="⚠️ "+nb+" facture(s) en retard — cliquez pour voir"; ab.style.display="block";} else ab.style.display="none"; }
+}
+
+// ================================================================
+// UTILITAIRES
+// ================================================================
+function r2(n){ return Math.round(n*100)/100; }
+function eur(n){ return r2(n).toFixed(2)+"€"; }
+function dateAuj(){ return new Date().toISOString().slice(0,10); }
+function heureNow(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+function genId(pfx){ return (pfx||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9999); }
+
+function calcLigne(l) {
+  var base = l.prixSaisi * l.qte;
+  var remP = base * ((l.remisePct||0)/100);
+  var remE = (l.remiseEur||0) * l.qte;
+  var ht   = r2(base - remP - remE);
+  var ttc  = r2(ht * (1 + (l.tva||20)/100));
+  return {ht:ht, ttc:ttc};
+}
+
+function calcFacture(f) {
+  var ht=0, tvaAmt=0;
+  (f.lignes||[]).forEach(function(l){ var c=calcLigne(l); ht+=c.ht; tvaAmt+=r2(c.ht*(l.tva||20)/100); });
+  var ttc  = r2(ht+tvaAmt);
+  var paye = r2((f.paiements||[]).reduce(function(s,p){return s+p.montant;},0));
+  return {ht:r2(ht), tva:r2(tvaAmt), ttc:ttc, paye:paye, reste:r2(ttc-paye)};
+}
+
+function statutBdg(s) {
+  var map={
+    "payée":"bdg-payee","envoyée":"bdg-envoyee","en retard":"bdg-retard",
+    "partiellement payée":"bdg-partiel","avoir":"bdg-avoir","annulée":"bdg-annulee","brouillon":"bdg-brouillon"
+  };
+  return '<span class="bdg '+(map[s]||"bdg-brouillon")+'"><span class="dot"></span>'+s+'</span>';
+}
+
+function joursRetard(echeance) {
+  if(!echeance) return 0;
+  var j = Math.floor((new Date()-new Date(echeance))/86400000);
+  return j>0?j:0;
+}
+
+function clientById(id){ return clients[id]||null; }
+
+function avatarBg(c) {
+  if(!c) return "#dbeafe";
+  if(c.solde<-50) return "#fee2e2";
+  if((c.fidelite||0)>50) return "#fef3c7";
+  return "#dbeafe";
+}
+function avatarColor(c) {
+  if(!c) return "#1d4ed8";
+  if(c.solde<-50) return "#991b1b";
+  if((c.fidelite||0)>50) return "#92400e";
+  return "#1d4ed8";
+}
+function avatarInitials(c){ if(!c) return "?"; return ((c.prenom||"")[0]||"")+(((c.nom||"")[0])||""); }
+
+function clientAlertes(c) {
+  var a=[];
+  if(!c) return a;
+  if(!c.certif) a.push("⚠️Certif");
+  if((c.solde||0)<-50) a.push("🔴"+Math.abs(c.solde)+"€");
+  if(!c.cgv) a.push("📋CGV");
+  return a;
+}
+
+function showToast(msg, color) {
+  var el = document.getElementById("toast");
+  el.textContent = (color?"":"✓ ")+msg;
+  el.style.background = color||"#10b981";
+  el.style.display = "block";
+  setTimeout(function(){ el.style.display="none"; }, 3000);
+}
+
+function openModal(id){ document.getElementById(id).classList.add("open"); }
+function closeModal(id){ document.getElementById(id).classList.remove("open"); }
+
+// ================================================================
+// CAISSE — RENDER PRINCIPAL
+// ================================================================
+var caisseCliQ = "";
+
+function renderCaisse() {
+  var content = document.getElementById("content");
+  content.innerHTML = [
+    '<div id="caisse-wrap">',
+      '<div id="caisse-client">',renderClientSearch(),'</div>',
+      '<div id="caisse-main">',
+        '<div id="produits-zone">',renderCats(),renderProduits(),'</div>',
+        '<div id="panier-zone">',renderPanier(),'</div>',
+      '</div>',
+    '</div>'
+  ].join("");
+}
+
+// ── Catégories
+var catActive = "tous";
+var CATS = [
+  {id:"tous",label:"Tous"},{id:"abonnement",label:"Abonnements"},{id:"cours",label:"Cours"},
+  {id:"stage",label:"Stages"},{id:"evenement",label:"Événements"},{id:"location",label:"Location"},
+  {id:"animation",label:"Animation"},{id:"pack",label:"Packs"},{id:"boutique",label:"Boutique"},
+  {id:"libre",label:"✏️ Libre"}
+];
+
+function renderCats() {
+  var html = '<div id="cats">';
+  CATS.forEach(function(c){
+    html += '<button class="cat-btn'+(catActive===c.id?" active":"") +'" onclick="setCat(\''+c.id+'\')">' + c.label + '</button>';
+  });
+  return html + '</div>';
+}
+
+function setCat(id) { catActive=id; renderPage(); }
+
+function renderProduits() {
+  var html = '<div id="produits-grid"><div class="grid">';
+  var list = catActive==="tous" ? produits : (catActive==="libre"?[]:produits.filter(function(p){return p.cat===catActive;}));
+  list.forEach(function(p){
+    var inCart = panier.find(function(l){return l.produitId===p.id;});
+    var bg = inCart ? p.couleur : "#fff";
+    var borderC = inCart ? p.couleur : "var(--line)";
+    var shadow = inCart ? "0 4px 12px "+p.couleur+"44" : "0 2px 5px rgba(0,0,0,.05)";
+    var nomC = inCart ? "#fff" : "#0f172a";
+    var prixC = inCart ? "#fff" : p.couleur;
+    html += '<button class="prod-btn" style="background:'+bg+';border-color:'+borderC+';box-shadow:'+shadow+';" onclick="addProduit(\''+p.id+'\')">';
+    if(inCart) html += '<span class="qbadge" style="color:'+p.couleur+'">'+inCart.qte+'</span>';
+    html += '<div class="pemoji">'+p.emoji+'</div>';
+    html += '<div class="pnom" style="color:'+nomC+'">'+p.nom+'</div>';
+    html += '<div class="pprix" style="color:'+prixC+'">'+eur(p.prix)+'</div>';
+    html += '</button>';
+  });
+  // Article libre (toujours affiché sauf si filtre spécifique non-libre)
+  if(catActive==="tous"||catActive==="libre") {
+    html += '<button class="prod-btn" style="background:#f8fafc;border:2px dashed var(--line);" onclick="openArticleLibre()">';
+    html += '<div class="pemoji">✏️</div><div class="pnom" style="color:#475569;">Article libre</div><div class="pprix" style="color:#94a3b8;">Prix libre</div>';
+    html += '</button>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function addProduit(id) {
+  var p = produits.find(function(x){return x.id===id;});
+  if(!p) return;
+  var idx = panier.findIndex(function(l){return l.produitId===p.id && l.prixSaisi===p.prix;});
+  if(idx>=0){ panier[idx].qte++; }
+  else {
+    panier.push({produitId:p.id,desc:p.nom,emoji:p.emoji,couleur:p.couleur,qte:1,pu:p.prix,prixSaisi:p.prix,remisePct:0,remiseEur:0,tva:p.tva});
+  }
+  initPayLignes();
+  renderPage();
+}
+
+// ── Article libre
+function openArticleLibre() {
+  var body = '<div class="form-grid-2">'
+    +'<div class="form-row"><label class="lbl">Libellé *</label><input class="inp" id="al-desc" placeholder="Description"/></div>'
+    +'<div class="form-row"><label class="lbl">Prix (€) *</label><input class="inp" id="al-prix" type="number" min="0" step="0.01" placeholder="0.00"/></div>'
+    +'<div class="form-row"><label class="lbl">TVA (%)</label><input class="inp" id="al-tva" type="number" value="20" min="0"/></div>'
+    +'</div>'
+    +'<div class="form-actions"><button class="btn btn-primary btn-full" onclick="addArticleLibre()">＋ Ajouter au panier</button></div>';
+  document.getElementById("mpf-title").textContent="✏️ Article libre";
+  document.getElementById("mpf-body").innerHTML=body;
+  openModal("modal-paiement-facture");
+}
+
+function addArticleLibre() {
+  var desc = (document.getElementById("al-desc").value||"").trim();
+  var prix = parseFloat(document.getElementById("al-prix").value)||0;
+  var tva  = parseFloat(document.getElementById("al-tva").value)||20;
+  if(!desc||!prix){showToast("Libellé et prix requis","#ef4444");return;}
+  panier.push({produitId:"libre_"+Date.now(),desc:desc,emoji:"✏️",couleur:"#6366f1",qte:1,pu:prix,prixSaisi:prix,remisePct:0,remiseEur:0,tva:tva});
+  closeModal("modal-paiement-facture");
+  initPayLignes();
+  renderPage();
+}
+
+// ── Panier
+function renderPanier() {
+  var total = r2(panier.reduce(function(s,l){return s+calcLigne(l).ttc;},0));
+  var html = '';
+  html += '<div id="panier-header"><span>Panier ('+panier.length+')</span>';
+  if(panier.length>0) html += '<button onclick="viderPanier()">Vider</button>';
+  html += '</div>';
+  html += '<div id="panier-items">';
+  if(panier.length===0){
+    html += '<div class="panier-empty"><span class="ico">🛒</span><span class="txt">Panier vide<br/>Cliquez sur les produits</span></div>';
+  } else {
+    panier.forEach(function(item,i){
+      var c = calcLigne(item);
+      var isEdit = panierEditIdx===i;
+      html += '<div class="panier-ligne">';
+      html += '<div class="pl-head" onclick="togglePanierEdit('+i+')">';
+      html += '<div class="pl-top">';
+      html += '<div style="flex:1;min-width:0;"><div class="pl-nom">'+(item.emoji||"")+" "+item.desc+'</div>';
+      html += '<div class="pl-sub">'+item.qte+' × '+eur(item.prixSaisi)+(item.remisePct>0||item.remiseEur>0?'<span style="color:#10b981"> ↓</span>':'')+'</div></div>';
+      html += '<div class="pl-prix" style="color:'+(item.couleur||"#60a5fa")+'">'+eur(c.ttc)+'</div>';
+      html += '</div></div>';
+      if(isEdit){
+        html += '<div class="pl-edit">';
+        html += '<div class="pl-edit-grid">';
+        html += '<div class="eg"><label>Quantité</label><div class="qte-ctrl">';
+        html += '<button onclick="updatePanier('+i+',{qte:Math.max(1,'+(item.qte-1)+')})" style="background:#1e293b;border:1px solid #334155;border-radius:50%;width:24px;height:24px;color:#e2e8f0;cursor:pointer;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;font-family:inherit;">−</button>';
+        html += '<span>'+item.qte+'</span>';
+        html += '<button onclick="updatePanier('+i+',{qte:'+(item.qte+1)+'})">+</button>';
+        html += '</div></div>';
+        html += '<div class="eg"><label>Prix (€)</label>';
+        html += '<input type="number" class="inp-dark inp-sm" value="'+item.prixSaisi+'" onchange="updatePanier('+i+',{prixSaisi:parseFloat(this.value)||0})" style="background:#1e293b;border:1.5px solid #334155;border-radius:6px;color:#fbbf24;padding:4px 7px;font-size:12px;font-weight:700;font-family:inherit;width:100%;"/>';
+        if(item.prixSaisi!==item.pu) html += '<div style="font-size:9px;color:#475569;">Cat: '+eur(item.pu)+'</div>';
+        html += '</div>';
+        html += '<div class="eg"><label>Remise</label><div style="display:flex;gap:3px;">';
+        html += '<div style="position:relative;flex:1;"><input type="number" min="0" max="100" value="'+item.remisePct+'" onchange="updatePanier('+i+',{remisePct:Math.min(100,Math.max(0,parseFloat(this.value)||0))})" style="width:100%;background:#1e293b;border:1.5px solid #334155;border-radius:6px;color:#10b981;padding:4px 18px 4px 5px;font-size:11px;font-weight:700;font-family:inherit;box-sizing:border-box;"/><span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:10px;color:#475569;">%</span></div>';
+        html += '<div style="position:relative;flex:1;"><input type="number" min="0" value="'+item.remiseEur+'" onchange="updatePanier('+i+',{remiseEur:Math.max(0,parseFloat(this.value)||0)})" style="width:100%;background:#1e293b;border:1.5px solid #334155;border-radius:6px;color:#10b981;padding:4px 18px 4px 5px;font-size:11px;font-weight:700;font-family:inherit;box-sizing:border-box;"/><span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:10px;color:#475569;">€</span></div>';
+        html += '</div>';
+        if(item.remisePct>20) html += '<div style="font-size:9px;color:#ef4444;font-weight:700;">⚠️ Remise élevée</div>';
+        html += '</div></div>';
+        html += '<div class="pl-edit-foot"><span class="detail">HT '+eur(c.ht)+' · TVA '+eur(r2(c.ht*(item.tva||20)/100))+' · TTC '+eur(c.ttc)+'</span>';
+        html += '<button onclick="supprimerLigne('+i+')">✕ Suppr.</button></div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  // Paiement
+  if(panier.length>0) html += renderPaiementZone(total);
+  // Historique jour
+  html += renderHistoJour();
+  return html;
+}
+
+function togglePanierEdit(i) { panierEditIdx = panierEditIdx===i ? -1 : i; renderPage(); }
+
+function updatePanier(i, upd) {
+  Object.assign(panier[i], upd);
+  initPayLignes();
+  renderPage();
+}
+
+function supprimerLigne(i) { panier.splice(i,1); panierEditIdx=-1; initPayLignes(); renderPage(); }
+
+function viderPanier() {
+  if(!confirm("Vider le panier ?")) return;
+  panier=[]; panierEditIdx=-1; payLignes=[]; noteVente=""; renderPage();
+}
+
+// ── Paiement
+function initPayLignes() {
+  var total = r2(panier.reduce(function(s,l){return s+calcLigne(l).ttc;},0));
+  if(payLignes.length===0) payLignes = [{mode:"CB",montant:total.toFixed(2),note:""}];
+  else { /* on garde les lignes, on ne réinitialise pas */ }
+}
+
+function renderPaiementZone(total) {
+  if(payLignes.length===0) initPayLignes();
+  var totalPaye = r2(payLignes.reduce(function(s,l){return s+(parseFloat(l.montant)||0);},0));
+  var reste = r2(total - totalPaye);
+  var hasEspeces = payLignes.some(function(l){return l.mode==="Espèces";});
+  var espV = parseFloat(especesVal)||0;
+  var rendu = hasEspeces && especesVal ? r2(espV - total) : null;
+  var staffOk = caisseStaff!=="";
+  var canPay = staffOk && totalPaye>0;
+
+  var html = '<div id="paiement-zone">';
+  // Total
+  html += '<div class="total-bar"><span class="tlbl">TOTAL TTC</span><span class="tval">'+eur(total)+'</span></div>';
+  // Staff
+  html += '<div class="staff-select"><div class="lbl" style="color:#64748b;font-size:10px;margin-bottom:5px;">STAFF ENCAISSANT *</div><div class="staff-btns">';
+  var staffList = currentStaff ? [currentStaff.nom] : ["Jason","Marie","Lucas","Amina","Théo"];
+  staffList.forEach(function(s){
+    html += '<button class="staff-btn'+(caisseStaff===s?" sel":"") +'" onclick="selectStaff(\''+s+'\')">'+s+'</button>';
+  });
+  html += '</div></div>';
+  // Lignes règlement
+  html += '<div class="pay-lignes" id="pay-lignes">';
+  payLignes.forEach(function(l,i){
+    html += '<div class="pay-ligne">';
+    html += '<select class="pay-mode" onchange="updatePayLigne('+i+',\'mode\',this.value)">';
+    ["CB","Espèces","Virement","Chèque","Fidélité","Solde","Compte"].forEach(function(m){
+      html += '<option value="'+m+'"'+(l.mode===m?" selected":"")+'>'+(m==="CB"?"💳 CB":m==="Espèces"?"💵 Espèces":m==="Virement"?"🏦 Virement":m==="Chèque"?"📝 Chèque":m==="Fidélité"?"⭐ Fidélité":m==="Solde"?"👤 Solde":"📋 Compte")+'</option>';
+    });
+    html += '</select>';
+    html += '<input class="pay-montant" type="number" value="'+l.montant+'" onchange="updatePayLigne('+i+',\'montant\',this.value)" placeholder="0.00"/>';
+    html += '<input class="pay-note" type="text" value="'+(l.note||"")+'" onchange="updatePayLigne('+i+',\'note\',this.value)" placeholder="Note…"/>';
+    if(payLignes.length>1) html += '<button class="pay-rm" onclick="removePayLigne('+i+')">✕</button>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '<button class="add-mode-btn" onclick="addPayLigne()">+ Ajouter un mode</button>';
+  // Espèces rendu
+  if(hasEspeces){
+    html += '<div class="especes-bloc"><div class="elbl">MONTANT REMIS (espèces)</div>';
+    html += '<div class="especes-row"><input type="number" value="'+(especesVal||"")+'" placeholder="'+eur(total)+'" onchange="especesVal=this.value;updateRendu()"/>';
+    html += '<span class="rendu" style="color:'+(rendu!==null&&rendu>=0?"#10b981":"#ef4444")+'">'+(rendu!==null?eur(rendu):"—")+'</span></div>';
+    html += '<div class="especes-shortcuts">';
+    [5,10,20,50,100].forEach(function(v){html+='<button onclick="especesVal=\''+v+'\';updateRendu()">'+v+'€</button>';});
+    html += '</div></div>';
+  }
+  // Reste
+  if(reste>0){
+    html += '<div class="reste-bar"><span class="rv">⚠️ Reste : '+eur(reste)+'</span>';
+    var cli = caisseClientId ? clientById(caisseClientId) : null;
+    if(cli) html += '<button class="sur-compte-btn" onclick="mettreEnCompte('+reste+')">📋 Sur compte</button>';
+    else html += '<span style="font-size:10px;color:#475569;font-style:italic;">Client requis</span>';
+    html += '</div>';
+  }
+  // Note
+  html += '<textarea class="note-vente" rows="1" placeholder="📝 Note sur la vente…" onchange="noteVente=this.value">'+noteVente+'</textarea>';
+  // Bouton
+  html += '<button class="encaisser-btn '+(canPay?"ready":"not-ready")+'" onclick="'+(canPay?"encaisser()":"(staffOk?null:openStaffModal())")+'">';
+  html += canPay ? "✓ Encaisser "+eur(total) : (staffOk?"En attente de montant…":"⚠️ Connexion staff requise");
+  html += '</button></div>';
+  return html;
+}
+
+function selectStaff(s){ caisseStaff=s; renderPage(); }
+function updatePayLigne(i,k,v){ payLignes[i][k]=v; renderPage(); }
+function addPayLigne(){ payLignes.push({mode:"CB",montant:"0",note:""}); renderPage(); }
+function removePayLigne(i){ payLignes.splice(i,1); renderPage(); }
+function mettreEnCompte(reste){ payLignes.push({mode:"Compte",montant:reste.toFixed(2),note:"Mise en compte"}); renderPage(); }
+function updateRendu(){ renderPage(); }
+
+// ── Encaisser
+function encaisser() {
+  if(!caisseStaff){ openStaffModal(); return; }
+  var total = r2(panier.reduce(function(s,l){return s+calcLigne(l).ttc;},0));
+  var totalPaye = r2(payLignes.reduce(function(s,l){return s+(parseFloat(l.montant)||0);},0));
+  if(totalPaye<=0){ showToast("Montant à encaisser requis","#ef4444"); return; }
+  if(totalPaye > total*1.5){ if(!confirm("Montant supérieur au total, confirmer ?")) return; }
+
+  var espV = parseFloat(especesVal)||0;
+  var renduMonnaie = payLignes.some(function(l){return l.mode==="Espèces";})&&especesVal ? Math.max(0,r2(espV-total)):0;
+
+  var paiements = payLignes.map(function(l,i){
+    return {id:genId("pay"),date:dateAuj(),heure:heureNow(),montant:r2(parseFloat(l.montant)||0),mode:l.mode,staff:caisseStaff,note:l.note||""};
+  });
+
+  var aMisEnCompte = paiements.some(function(p){return p.mode==="Compte";});
+  var statut = totalPaye>=total ? "payée" : (aMisEnCompte||(totalPaye>0&&totalPaye<total)) ? "partiellement payée" : "envoyée";
+
+  var facture = {
+    id: genLocalFactureId(),
+    clientId: caisseClientId||null,
+    lignes: JSON.parse(JSON.stringify(panier)),
+    date: dateAuj(), echeance: dateAuj(),
+    statut: statut, notes: noteVente, staff: caisseStaff,
+    paiements: paiements, relances: [],
+    fromCaisse: true, renduMonnaie: renduMonnaie,
+    createdAt: new Date().toISOString()
+  };
+
+  // Sauvegarde locale immédiate
+  factures.push(facture);
+  // Mise à jour solde client si compte
+  if(caisseClientId && aMisEnCompte && clients[caisseClientId]){
+    var delta = paiements.filter(function(p){return p.mode==="Compte";}).reduce(function(s,p){return s+p.montant;},0);
+    clients[caisseClientId].solde = r2((clients[caisseClientId].solde||0) - delta);
+    clients[caisseClientId].derniereVisite = dateAuj();
+    syncClientToBackend(clients[caisseClientId]);
+  }
+  saveLocal();
+  updateBadges();
+
+  // Sync backend
+  if(BACKEND_URL){
+    api({action:"createFacture",facture:facture}, function(d){
+      if(d&&d.ok&&d.id){
+        // Mettre à jour l'ID avec celui du serveur
+        var idx=factures.findIndex(function(f){return f.id===facture.id;});
+        if(idx>=0){ factures[idx].id=d.id; facture.id=d.id; }
+        saveLocal();
+      }
+    });
+  }
+
+  // Afficher ticket
+  afficherTicket(facture);
+  // Reset caisse
+  panier=[]; payLignes=[]; noteVente=""; especesVal=""; panierEditIdx=-1;
+}
+
+function genLocalFactureId(){
+  var year = new Date().getFullYear().toString();
+  var existant = factures.filter(function(f){return f.id&&f.id.startsWith(year+"-");});
+  var max=0;
+  existant.forEach(function(f){var n=parseInt((f.id||"").split("-")[1])||0;if(n>max)max=n;});
+  return year+"-"+("0000"+(max+1)).slice(-4);
+}
+
+// ── Ticket
+function afficherTicket(f) {
+  var c = calcFacture(f);
+  var cli = f.clientId ? clientById(f.clientId) : null;
+  var html = '<div class="ticket-top"><div class="ti">✅</div><div class="tt">Vente encaissée !</div><div class="ta">'+eur(c.ttc)+'</div></div>';
+  html += '<div class="ticket-body">';
+  html += '<div class="ticket-row"><span class="k">Ticket n°</span><span class="v">'+f.id+'</span></div>';
+  html += '<div class="ticket-row"><span class="k">Date</span><span class="v">'+f.date+' '+((f.paiements[0]&&f.paiements[0].heure)||"")+'</span></div>';
+  if(cli) html += '<div class="ticket-row"><span class="k">Client</span><span class="v">'+cli.prenom+' '+cli.nom+'</span></div>';
+  html += '<div class="ticket-row"><span class="k">Staff</span><span class="v">'+f.staff+'</span></div>';
+  html += '<hr class="ticket-sep"/>';
+  (f.lignes||[]).forEach(function(l){
+    var lc=calcLigne(l);
+    html += '<div class="ticket-row"><span>'+(l.emoji||"")+" "+l.desc+" ×"+l.qte+'</span><span class="v">'+eur(lc.ttc)+'</span></div>';
+  });
+  html += '<hr class="ticket-sep"/>';
+  [["HT",eur(c.ht)],["TVA",eur(c.tva)]].forEach(function(r){
+    html += '<div class="ticket-row"><span class="k">'+r[0]+'</span><span>'+r[1]+'</span></div>';
+  });
+  html += '<div class="ticket-total-row"><span>TOTAL TTC</span><span>'+eur(c.ttc)+'</span></div>';
+  html += '<hr class="ticket-sep"/>';
+  (f.paiements||[]).forEach(function(p){
+    html += '<div class="ticket-row"><span class="k">💳 '+p.mode+(p.note?" ("+p.note+")":"")+'</span><span class="v">'+eur(p.montant)+'</span></div>';
+  });
+  if(c.reste>0) html += '<div style="background:#fef3c7;border-radius:7px;padding:5px 9px;margin-top:5px;font-size:11px;font-weight:700;color:#92400e;">⚠️ En compte : '+eur(c.reste)+'</div>';
+  if(f.renduMonnaie>0) html += '<div style="background:#d1fae5;border-radius:7px;padding:5px 9px;margin-top:5px;font-size:11px;font-weight:800;color:#065f46;">🪙 Rendu : '+eur(f.renduMonnaie)+'</div>';
+  html += '<div style="text-align:center;color:#94a3b8;font-size:10px;margin-top:8px;">Merci de votre visite !</div>';
+  html += '</div>';
+  html += '<div class="ticket-actions"><button class="btn btn-dark btn-full" onclick="window.print()">🖨️ Imprimer</button>';
+  html += '<button class="btn btn-green btn-full" onclick="nouvelleVente()">✚ Nouvelle vente</button></div>';
+  document.getElementById("ticket-card").innerHTML = html;
+  document.getElementById("ticket-overlay").classList.add("open");
+}
+
+function nouvelleVente() {
+  document.getElementById("ticket-overlay").classList.remove("open");
+  caisseClientId=null; caisseAnonyme=false;
+  renderPage();
+}
+
+// ── Historique du jour
+function renderHistoJour(){
+  var today=dateAuj();
+  var vj=factures.filter(function(f){return f.date===today&&f.fromCaisse;});
+  if(!vj.length) return "";
+  var total=r2(vj.reduce(function(s,f){return s+calcFacture(f).paye;},0));
+  var html='<div id="histo-jour"><div class="hlbl">Ventes du jour · '+eur(total)+'</div><div id="histo-items">';
+  vj.slice(-5).forEach(function(f){
+    var cli=f.clientId?clientById(f.clientId):null;
+    html+='<div class="histo-chip"><span class="hid">'+f.id+'</span><span class="hamt">'+eur(calcFacture(f).ttc)+'</span>'+(cli?'<span class="hcli">·'+cli.prenom+'</span>':'')+'</div>';
+  });
+  return html+'</div></div>';
+}
+
+// ================================================================
+// CLIENT SEARCH (dans caisse)
+// ================================================================
+function renderClientSearch(){
+  var cli = caisseClientId ? clientById(caisseClientId) : null;
+  if(caisseAnonyme || (caisseClientId && cli)) {
+    if(cli){
+      var soldeC = (cli.solde||0)<0?"#ef4444":(cli.solde||0)>0?"#10b981":"#94a3b8";
+      return '<div id="cli-search-wrap"><div class="cli-selected">'
+        +'<div class="cl-info"><div class="cl-av" style="background:'+avatarBg(cli)+';color:'+avatarColor(cli)+';">'+avatarInitials(cli)+'</div>'
+        +'<div><div class="cl-name">'+cli.prenom+' '+cli.nom+'</div>'
+        +'<div class="cl-sub"><span style="color:'+soldeC+';font-weight:700;">Solde : '+(cli.solde>0?"+":"")+cli.solde+'€</span>'+(cli.fidelite>0?' · ⭐ '+cli.fidelite+' pts':"")+' · '+cli.sessions+' séances</div>'
+        +'</div></div>'
+        +'<button class="cl-chg" onclick="deselectClient()">Changer ↩</button>'
+        +'</div></div>';
+    }
+    return '<div id="cli-search-wrap"><div style="background:#f8fafc;border:2px solid var(--line);border-radius:13px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;"><span style="color:#64748b;font-size:13px;">🏃 Vente anonyme</span><button class="btn btn-soft btn-sm" onclick="deselectClient()">Changer ↩</button></div></div>';
+  }
+  var html = '<div id="cli-search-wrap">';
+  html += '<div class="cli-search-bar">';
+  html += '<input class="inp" id="cli-q" type="text" placeholder="🔍 Nom, téléphone, email, licence…" value="'+(caisseCliQ||"")+'" oninput="caisseCliQ=this.value;renderCliSearch()"/>';
+  html += '<button class="btn btn-soft btn-sm" onclick="caisseAnonyme=true;caisseClientId=null;renderPage()">🏃 Anonyme</button>';
+  html += '<button class="btn btn-green btn-sm" onclick="showNouveauClientForm()">＋ Nouveau</button>';
+  html += '</div>';
+  html += '<div id="cli-results">'+renderCliResults()+'</div>';
+  if(!caisseClientId&&!caisseAnonyme) html += '<div class="cli-hint">💡 Identifiez le client pour facturation et suivi</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderCliResults(){
+  var q = (caisseCliQ||"").toLowerCase().trim();
+  if(q.length>0){
+    var res=Object.values(clients).filter(function(c){
+      return (c.prenom+" "+c.nom+" "+c.tel+" "+c.email+" "+(c.licence||"")).toLowerCase().includes(q);
+    }).slice(0,5);
+    if(!res.length) return '<div style="text-align:center;color:#94a3b8;padding:10px;font-size:12px;">Aucun client — <button onclick="showNouveauClientForm()" style="background:none;border:none;color:#1d4ed8;font-weight:700;cursor:pointer;">Créer</button></div>';
+    return res.map(function(c){return cliCardHTML(c);}).join("");
+  }
+  // Récents + fréquents
+  var recents = Object.values(clients).filter(function(c){return c.recent;}).slice(0,4);
+  var frequents = Object.values(clients).filter(function(c){return c.frequent&&!c.recent;}).slice(0,2);
+  var html="";
+  if(recents.length){
+    html+='<div class="cli-section-lbl">Récents</div><div class="cli-grid">'+recents.map(function(c){return cliCardHTML(c,true);}).join("")+'</div>';
+  }
+  if(frequents.length){
+    html+='<div class="cli-section-lbl" style="margin-top:6px;">Fréquents</div><div class="cli-grid">'+frequents.map(function(c){return cliCardHTML(c,true);}).join("")+'</div>';
+  }
+  html += '<button class="anon-btn" onclick="caisseAnonyme=true;renderPage()">🏃 Continuer en anonyme</button>';
+  return html;
+}
+
+function cliCardHTML(c, compact) {
+  var al = clientAlertes(c);
+  var soldeC = (c.solde||0)<0?"#ef4444":(c.solde||0)>0?"#10b981":"#94a3b8";
+  return '<button class="cli-card" onclick="selectClient(\''+c.id+'\')">'
+    +'<div class="cli-card-inner">'
+    +'<div class="cli-card-av" style="background:'+avatarBg(c)+';color:'+avatarColor(c)+';">'+avatarInitials(c)+'</div>'
+    +'<div class="cli-card-info">'
+    +'<div class="cli-card-name">'+c.prenom+' '+c.nom+'</div>'
+    +'<div class="cli-card-tel">'+c.tel+'</div>'
+    +(al.length?'<div class="cli-card-alerte">'+al.join(" · ")+'</div>':'')
+    +'</div>'
+    +'<div class="cli-card-right">'
+    +'<div class="cli-card-solde" style="color:'+soldeC+';">'+(c.solde>0?"+":"")+c.solde+'€</div>'
+    +((c.fidelite||0)>0?'<div class="cli-card-fid">⭐'+c.fidelite+'pts</div>':'')
+    +'</div></div></button>';
+}
+
+function selectClient(id){ caisseClientId=id; caisseAnonyme=false; caisseCliQ=""; renderPage(); }
+function deselectClient(){ caisseClientId=null; caisseAnonyme=false; caisseCliQ=""; renderPage(); }
+
+function renderCliSearch(){
+  var el=document.getElementById("cli-results");
+  if(el) el.innerHTML=renderCliResults();
+}
+
+var showingNewClientForm=false;
+function showNouveauClientForm(){
+  var zone=document.getElementById("cli-results");
+  if(!zone)return;
+  zone.innerHTML='<div class="nouveau-cli-form">'
+    +'<div class="form-title">Création rapide</div>'
+    +'<div class="form-grid-2">'
+    +'<div class="form-row"><label>Prénom *</label><input class="inp" id="nc-prenom" placeholder="Prénom"/></div>'
+    +'<div class="form-row"><label>Nom *</label><input class="inp" id="nc-nom" placeholder="Nom"/></div>'
+    +'<div class="form-row"><label>Téléphone *</label><input class="inp" id="nc-tel" type="tel" placeholder="06 00 00 00 00"/></div>'
+    +'<div class="form-row"><label>Email</label><input class="inp" id="nc-email" type="email" placeholder="optionnel"/></div>'
+    +'</div>'
+    +'<div class="form-actions">'
+    +'<button class="btn btn-green" onclick="creerClientRapide()">✓ Créer et sélectionner</button>'
+    +'<button class="btn btn-soft" onclick="renderCliSearch()">Annuler</button>'
+    +'</div></div>';
+}
+
+function creerClientRapide(){
+  var prenom=(document.getElementById("nc-prenom").value||"").trim();
+  var nom=(document.getElementById("nc-nom").value||"").trim();
+  var tel=(document.getElementById("nc-tel").value||"").trim();
+  var email=(document.getElementById("nc-email").value||"").trim();
+  if(!prenom||!nom||!tel){showToast("Prénom, nom et téléphone requis","#ef4444");return;}
+  var id=genId("cli");
+  var c={id:id,prenom:prenom,nom:nom,tel:tel,email:email,ville:"",solde:0,fidelite:0,sessions:0,
+    certif:false,cgv:false,licence:"",tags:["nouveau"],notes:"",derniereVisite:dateAuj(),
+    createdAt:new Date().toISOString(),recent:true,frequent:false,dirty:true};
+  clients[id]=c;
+  saveLocal();
+  syncClientToBackend(c);
+  selectClient(id);
+  showToast("Client créé !");
+}
+
+// ================================================================
+// FACTURES PAGE
+// ================================================================
+function renderFactures(){
+  var list = factures.filter(function(f){
+    var cl=f.clientId?clientById(f.clientId):null;
+    var matchQ=(facturesQ==="")||
+      ((cl?(cl.prenom+" "+cl.nom):"").toLowerCase().includes(facturesQ.toLowerCase()))||
+      (f.id||"").toLowerCase().includes(facturesQ.toLowerCase());
+    return (facturesFlt==="tous"||f.statut===facturesFlt) && matchQ;
+  });
+
+  var statuts=["tous","envoyée","partiellement payée","payée","en retard","avoir","annulée","brouillon"];
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+    +'<h2 style="font-weight:900;font-size:22px;font-family:Georgia,serif;">🧾 Factures</h2></div>';
+  html+='<input class="inp" style="margin-bottom:12px;" placeholder="🔍 Client ou n° facture…" value="'+facturesQ+'" oninput="facturesQ=this.value;selectedFacId=null;renderPage()"/>';
+  html+='<div class="filters">';
+  statuts.forEach(function(s){
+    var nb=s==="tous"?factures.length:factures.filter(function(f){return f.statut===s;}).length;
+    html+='<button class="flt-btn'+(facturesFlt===s?" active":"") +'" onclick="facturesFlt=\''+s+'\';selectedFacId=null;renderPage()">'+(s==="tous"?"Toutes":s)+' ('+nb+')</button>';
+  });
+  html+='</div>';
+  html+='<div class="card" style="overflow:hidden;margin-bottom:14px;"><table class="tbl"><thead><tr>';
+  ["N°","Client","Prestation","TTC","Payé","Reste","Statut","Éch.",""].forEach(function(h){html+='<th>'+h+'</th>';});
+  html+='</tr></thead><tbody>';
+  list.forEach(function(f){
+    var c=calcFacture(f);
+    var cl=f.clientId?clientById(f.clientId):null;
+    var retard=joursRetard(f.echeance);
+    html+='<tr class="'+(selectedFacId===f.id?"sel":"")+'" onclick="selectedFacId=\''+f.id+'\';renderPage()">';
+    html+='<td style="font-weight:700;color:#1d4ed8;font-size:12px;">'+f.id+(f.fromCaisse?'<span style="margin-left:3px;font-size:9px;background:#ede9fe;color:#5b21b6;border-radius:3px;padding:1px 4px;">🛒</span>':'')+'</td>';
+    html+='<td style="font-weight:600;">'+( cl?cl.prenom+" "+cl.nom:"—")+'</td>';
+    html+='<td style="color:#6b7280;font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(f.lignes&&f.lignes[0]?f.lignes[0].desc:"")+'</td>';
+    html+='<td style="font-weight:700;">'+eur(c.ttc)+'</td>';
+    html+='<td style="color:#10b981;font-weight:700;">'+eur(c.paye)+'</td>';
+    html+='<td style="font-weight:800;color:'+(c.reste>0?"#ef4444":"#10b981")+';">'+eur(c.reste)+'</td>';
+    html+='<td>'+statutBdg(f.statut)+'</td>';
+    html+='<td style="font-size:11px;color:'+(retard>0?"#ef4444":"#6b7280")+';font-weight:'+(retard>0?"700":"400")+';white-space:nowrap;">'+(f.echeance||"")+(retard>0?" +"+retard+"j":"")+'</td>';
+    html+='<td onclick="event.stopPropagation()">'+(c.reste>0?'<button class="btn btn-green btn-sm" onclick="openPayModal(\''+f.id+'\')">💳</button>':"")+'</td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table></div>';
+
+  // Détail
+  if(selectedFacId){
+    var selF=factures.find(function(f){return f.id===selectedFacId;});
+    if(selF){
+      var sc=calcFacture(selF);
+      var scl=selF.clientId?clientById(selF.clientId):null;
+      html+='<div class="facture-detail">';
+      html+='<div class="fd-head"><div><div class="fd-id">'+selF.id+'</div><div class="fd-cli">'+(scl?scl.prenom+" "+scl.nom+" · "+scl.email:"Anonyme")+'</div></div>';
+      html+='<div style="display:flex;gap:8px;align-items:center;">'+statutBdg(selF.statut);
+      html+='<select onchange="changeStatutFacture(\''+selF.id+'\',this.value)" style="border:1.5px solid var(--line);border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;">';
+      ["brouillon","envoyée","partiellement payée","payée","en retard","avoir","annulée"].forEach(function(s){
+        html+='<option value="'+s+'"'+(selF.statut===s?" selected":"")+'>'+s+'</option>';
+      });
+      html+='</select></div></div>';
+      html+='<div class="fd-stats">';
+      [["TTC",eur(sc.ttc),"#0f172a"],["Payé",eur(sc.paye),"#10b981"],["Reste",eur(sc.reste),"#ef4444"],["Relances",(selF.relances||[]).length,"#f59e0b"]].forEach(function(x){
+        html+='<div class="fd-stat"><div class="sv" style="color:'+x[2]+';">'+x[1]+'</div><div class="sk">'+x[0]+'</div></div>';
+      });
+      html+='</div>';
+      if((selF.paiements||[]).length){
+        html+='<div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px;">PAIEMENTS</div>';
+        (selF.paiements||[]).forEach(function(p){
+          html+='<div class="pay-hist"><span class="pm">✅ '+p.date+' '+p.heure+' · '+p.mode+' · '+p.staff+(p.note?' · "'+p.note+'"':'')+'</span><span class="pa">+'+eur(p.montant)+'</span></div>';
+        });
+        html+='</div>';
+      }
+      html+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+      if(sc.reste>0) html+='<button class="btn btn-green" onclick="openPayModal(\''+selF.id+'\')">💳 Paiement</button>';
+      html+='<button class="btn btn-primary">📄 PDF</button>';
+      html+='<button class="btn" style="background:#fef3c7;color:#92400e;">🔔 Relancer</button>';
+      html+='<button class="btn" style="background:#ede9fe;color:#5b21b6;">📋 Avoir</button>';
+      html+='</div></div>';
+    }
+  }
+  document.getElementById("content").innerHTML=html;
+}
+
+function changeStatutFacture(id, statut){
+  var f=factures.find(function(x){return x.id===id;});
+  if(!f) return;
+  f.statut=statut;
+  saveLocal();
+  updateBadges();
+  if(BACKEND_URL) api({action:"updateFacture",id:id,statut:statut});
+  showToast("Statut mis à jour");
+  renderPage();
+}
+
+// ── Modal paiement facture
+function openPayModal(fid){
+  var f=factures.find(function(x){return x.id===fid;});
+  if(!f) return;
+  var c=calcFacture(f);
+  var cl=f.clientId?clientById(f.clientId):null;
+  selectedFacId=fid;
+  document.getElementById("mpf-title").textContent="💳 Paiement — "+fid;
+  var modes=["CB","Espèces","Virement","Chèque","SEPA","Solde","Fidélité"];
+  var staffOpts=["Jason","Marie","Lucas","Amina","Théo"].map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join("");
+  var body='<div style="background:#f8fafc;border-radius:9px;padding:11px;margin-bottom:12px;display:flex;gap:16px;">';
+  body+='<div><div style="font-size:10px;color:#94a3b8;font-weight:700;">CLIENT</div><div style="font-weight:700;">'+(cl?cl.prenom+" "+cl.nom:"—")+'</div></div>';
+  body+='<div><div style="font-size:10px;color:#94a3b8;font-weight:700;">RESTE DÛ</div><div style="font-weight:900;color:#ef4444;font-size:17px;">'+eur(c.reste)+'</div></div></div>';
+  body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px;">';
+  body+='<div><label class="lbl">Montant (€)</label><input class="inp" id="mpe-montant" type="number" value="'+c.reste.toFixed(2)+'"/></div>';
+  body+='<div><label class="lbl">Date</label><input class="inp" id="mpe-date" type="date" value="'+dateAuj()+'"/></div></div>';
+  body+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;" id="mpe-modes">';
+  modes.forEach(function(m,i){body+='<button class="btn btn-sm'+(i===0?" btn-primary":" btn-soft")+'" onclick="selectPayMode(this,\''+m+'\')">'+m+'</button>';});
+  body+='</div><input type="hidden" id="mpe-mode" value="CB"/>';
+  body+='<div style="margin-bottom:9px;"><label class="lbl">Staff *</label><select class="inp" id="mpe-staff"><option value="">— Choisir —</option>'+staffOpts+'</select></div>';
+  body+='<div style="margin-bottom:9px;"><label class="lbl">Note</label><input class="inp" id="mpe-note" placeholder="Optionnel…"/></div>';
+  body+='<div style="display:flex;gap:8px;"><button class="btn btn-green btn-full" onclick="validerPayFacture(\''+fid+'\')">✓ Valider</button><button class="btn btn-soft btn-full" onclick="closeModal(\'modal-paiement-facture\')">Annuler</button></div>';
+  document.getElementById("mpf-body").innerHTML=body;
+  openModal("modal-paiement-facture");
+}
+
+function selectPayMode(btn, mode){
+  document.getElementById("mpe-mode").value=mode;
+  document.querySelectorAll("#mpe-modes button").forEach(function(b){b.className="btn btn-sm btn-soft";});
+  btn.className="btn btn-sm btn-primary";
+}
+
+function validerPayFacture(fid){
+  var montant=parseFloat(document.getElementById("mpe-montant").value)||0;
+  var date=document.getElementById("mpe-date").value||dateAuj();
+  var mode=document.getElementById("mpe-mode").value||"CB";
+  var staff=document.getElementById("mpe-staff").value;
+  var note=document.getElementById("mpe-note").value||"";
+  if(!staff){showToast("Staff requis","#ef4444");return;}
+  if(!montant){showToast("Montant requis","#ef4444");return;}
+  var f=factures.find(function(x){return x.id===fid;});
+  if(!f) return;
+  var p={id:genId("pay"),date:date,heure:heureNow(),montant:montant,mode:mode,staff:staff,note:note};
+  if(!f.paiements) f.paiements=[];
+  f.paiements.push(p);
+  // Recalc statut
+  var c=calcFacture(f);
+  f.statut=c.reste<=0?"payée":"partiellement payée";
+  saveLocal();
+  updateBadges();
+  if(BACKEND_URL){
+    api({action:"addPaiement",paiement:{factureId:fid,clientId:f.clientId||"",date:date,heure:p.heure,montant:montant,mode:mode,staff:staff,note:note}});
+  }
+  closeModal("modal-paiement-facture");
+  showToast(eur(montant)+" enregistré !");
+  renderPage();
+}
+
+// ================================================================
+// CLIENTS PAGE
+// ================================================================
+function renderClients(){
+  var list=Object.values(clients).filter(function(c){
+    if(!clientsQ) return true;
+    return (c.prenom+" "+c.nom+" "+c.tel+" "+c.email+" "+(c.tags||[]).join(" ")).toLowerCase().includes(clientsQ.toLowerCase());
+  });
+
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+    +'<h2 style="font-weight:900;font-size:22px;font-family:Georgia,serif;">👥 Clients ('+Object.keys(clients).length+')</h2>'
+    +'<button class="btn btn-primary">＋ Nouveau client</button></div>';
+  html+='<input class="inp" style="margin-bottom:14px;" placeholder="🔍 Nom, téléphone, ville, tag…" value="'+clientsQ+'" oninput="clientsQ=this.value;renderPage()"/>';
+  list.forEach(function(c){
+    var cf=factures.filter(function(f){return f.clientId===c.id;});
+    var imp=r2(cf.reduce(function(s,f){
+      if(["en retard","partiellement payée"].includes(f.statut)) return s+calcFacture(f).reste;
+      return s;
+    },0));
+    var soldeC=(c.solde||0)<0?"#ef4444":(c.solde||0)>0?"#10b981":"#94a3b8";
+    html+='<div class="client-row" onclick="openFicheClient(\''+c.id+'\')">';
+    html+='<div class="cr-left"><div class="cr-av" style="background:'+avatarBg(c)+';color:'+avatarColor(c)+';">';
+    html+=avatarInitials(c);
+    if((c.sessions||0)>20) html+='<span class="star">⭐</span>';
+    html+='</div><div class="cr-info"><div class="cr-name">'+c.prenom+' '+c.nom+'</div>';
+    html+='<div class="cr-sub">'+c.tel+' · '+(c.email||"—")+'</div>';
+    html+='<div class="cr-tags">';
+    (c.tags||[]).forEach(function(t){html+='<span class="cr-tag">'+t+'</span>';});
+    if(c.licence) html+='<span class="cr-tag cr-tag-fft">🎾 FFT</span>';
+    if(!c.certif) html+='<span class="cr-tag cr-tag-warn">⚠️ Certif</span>';
+    html+='</div></div></div>';
+    html+='<div class="cr-right"><div class="cr-solde" style="color:'+soldeC+';">'+(c.solde>0?"+":"")+c.solde+'€</div>';
+    if((c.fidelite||0)>0) html+='<div class="cr-fid">⭐ '+c.fidelite+' pts</div>';
+    if(imp>0) html+='<div class="cr-imp">⚠️ '+eur(imp)+'</div>';
+    html+='</div></div>';
+  });
+  document.getElementById("content").innerHTML=html;
+}
+
+function openFicheClient(id){
+  var c=clientById(id);
+  if(!c) return;
+  var cf=factures.filter(function(f){return f.clientId===id;});
+  var caTotal=r2(cf.reduce(function(s,f){return s+calcFacture(f).paye;},0));
+  var soldeC=(c.solde||0)<0?"#ef4444":(c.solde||0)>0?"#10b981":"#94a3b8";
+  document.getElementById("mfc-title").textContent=c.prenom+" "+c.nom;
+  var html='<div style="display:flex;gap:14px;margin-bottom:16px;">';
+  html+='<div style="width:56px;height:56px;border-radius:50%;background:'+avatarBg(c)+';color:'+avatarColor(c)+';display:flex;align-items:center;justify-content:center;font-weight:900;font-size:20px;flex-shrink:0;">'+avatarInitials(c)+'</div>';
+  html+='<div style="flex:1;"><div style="font-size:18px;font-weight:900;">'+c.prenom+' '+c.nom+'</div>';
+  html+='<div style="font-size:12px;color:#64748b;">'+c.email+' · '+c.tel+'</div>';
+  if(c.notes) html+='<div style="background:#fffbeb;border-radius:7px;padding:5px 9px;margin-top:5px;font-size:11px;color:#92400e;">📝 '+c.notes+'</div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">';
+  [["Solde",eur(c.solde),soldeC],["Fidélité","⭐ "+c.fidelite+" pts","#f59e0b"],["Séances",(c.sessions||0),"#8b5cf6"],["CA",eur(caTotal),"#1d4ed8"]].forEach(function(x){
+    html+='<div style="background:#f8fafc;border-radius:9px;padding:8px 10px;text-align:center;"><div style="font-size:14px;font-weight:900;color:'+x[2]+';">'+x[1]+'</div><div style="font-size:10px;color:#94a3b8;font-weight:700;">'+x[0]+'</div></div>';
+  });
+  html+='</div></div>';
+  html+='<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px;">Transactions</div>';
+  html+='<div style="background:#f8fafc;border-radius:10px;overflow:hidden;">';
+  cf.forEach(function(f,i){
+    var fc=calcFacture(f);
+    html+='<div style="padding:9px 13px;'+(i<cf.length-1?"border-bottom:1px solid #e2e8f0;":"")+' display:flex;justify-content:space-between;align-items:center;">';
+    html+='<div><div style="font-weight:700;font-size:12px;color:#1d4ed8;">'+f.id+'</div><div style="font-size:11px;color:#64748b;">'+(f.lignes||[]).map(function(l){return l.desc;}).join(", ")+' · '+f.date+'</div></div>';
+    html+='<div style="display:flex;gap:7px;align-items:center;">'+statutBdg(f.statut)+'<span style="font-weight:800;font-size:13px;">'+eur(fc.ttc)+'</span></div></div>';
+  });
+  if(!cf.length) html+='<div style="padding:12px;color:#94a3b8;font-size:12px;text-align:center;">Aucune facture</div>';
+  html+='</div></div>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html+='<button class="btn btn-primary">✉️ Email</button>';
+  html+='<button class="btn btn-green">💰 Créditer solde</button>';
+  html+='<button class="btn" style="background:#fef3c7;color:#92400e;">⭐ Fidélité</button>';
+  html+='<button class="btn btn-dark">🧾 Relevé PDF</button>';
+  html+='</div>';
+  document.getElementById("mfc-body").innerHTML=html;
+  openModal("modal-fiche-client");
+}
+
+// ================================================================
+// DASHBOARD
+// ================================================================
+function renderDashboard(){
+  var today=dateAuj();
+  var thisMonth=today.slice(0,7);
+  var caJour=0,caMois=0,caTotal=0;
+  factures.forEach(function(f){
+    (f.paiements||[]).forEach(function(p){
+      caTotal+=p.montant;
+      if((p.date||"").slice(0,10)===today) caJour+=p.montant;
+      if((p.date||"").slice(0,7)===thisMonth) caMois+=p.montant;
+    });
+  });
+  var nbRetard=factures.filter(function(f){return f.statut==="en retard";}).length;
+  var impaye=r2(factures.reduce(function(s,f){
+    if(["en retard","partiellement payée"].includes(f.statut)) return s+calcFacture(f).reste;
+    return s;
+  },0));
+
+  var html='<h2 style="font-size:22px;font-weight:900;font-family:Georgia,serif;margin-bottom:18px;">📊 Dashboard</h2>';
+  html+='<div class="cta-caisse"><div><div class="ct">🛒 Interface Caisse</div><div class="cs">POS mono-écran — encaissement rapide</div></div>';
+  html+='<button onclick="showPage(\'caisse\')">Ouvrir la caisse →</button></div>';
+  html+='<div class="kpi-grid">';
+  [["💰","CA du jour",eur(r2(caJour)),"#10b981","border-left:4px solid #10b981"],
+   ["📅","CA ce mois",eur(r2(caMois)),"#3b82f6","border-left:4px solid #3b82f6"],
+   ["⚠️","En retard",nbRetard,"#ef4444","border-left:4px solid #ef4444"],
+   ["🔴","Impayés",eur(impaye),"#f59e0b","border-left:4px solid #f59e0b"],
+   ["👥","Clients",Object.keys(clients).length,"#8b5cf6","border-left:4px solid #8b5cf6"],
+  ].forEach(function(x){
+    html+='<div class="kpi" style="'+x[4]+'"><div class="ki">'+x[0]+'</div><div class="kv" style="color:#0f172a;">'+x[2]+'</div><div class="kl">'+x[1]+'</div></div>';
+  });
+  html+='</div>';
+  // Tableau récent
+  html+='<div class="card" style="overflow:hidden;">';
+  html+='<div style="padding:13px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:700;">Activité récente</span><button onclick="showPage(\'factures\')" style="background:none;border:none;color:#1d4ed8;font-weight:700;cursor:pointer;font-size:13px;">Tout voir →</button></div>';
+  html+='<table class="tbl"><thead><tr>';
+  ["N°","Client","TTC","Statut","Date"].forEach(function(h){html+='<th>'+h+'</th>';});
+  html+='</tr></thead><tbody>';
+  var recent=[].concat(factures).reverse().slice(0,8);
+  recent.forEach(function(f,i){
+    var c=calcFacture(f);var cl=f.clientId?clientById(f.clientId):null;
+    html+='<tr style="background:'+(i%2===0?"#fff":"#fafafa")+'">';
+    html+='<td style="font-weight:700;color:#1d4ed8;font-size:12px;">'+f.id+'</td>';
+    html+='<td style="font-weight:600;">'+(cl?cl.prenom+" "+cl.nom:"—")+'</td>';
+    html+='<td style="font-weight:700;">'+eur(c.ttc)+'</td>';
+    html+='<td>'+statutBdg(f.statut)+'</td>';
+    html+='<td style="font-size:12px;color:#6b7280;">'+(f.date||"")+'</td>';
+    html+='</tr>';
+  });
+  if(!recent.length) html+='<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px;font-size:13px;">Aucune facture pour le moment</td></tr>';
+  html+='</tbody></table></div>';
+  document.getElementById("content").innerHTML=html;
+}
+
+// ================================================================
+// SYNC CLIENT BACKEND
+// ================================================================
+function syncClientToBackend(c){
+  if(!BACKEND_URL||!c) return;
+  api({action:"upsertClient",client:c}, function(d){
+    if(d&&d.ok&&clients[c.id]){ clients[c.id].dirty=false; saveLocal(); }
+  });
+}
+
+</script>
+</body>
+</html>
