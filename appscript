@@ -1,0 +1,471 @@
+// ================================================================
+// FACTURATION TENNIS & PADEL CLUB — Google Apps Script v2
+// TOUTES LES ROUTES SONT FONCTIONNELLES
+// ================================================================
+var SS_ID      = "1qWNyQZzWieV7u30pEzhEHsNG7oxt72K8Ssg1yTDGGX8"; // ← COLLE TON ID GOOGLE SHEET ICI
+var APP_SECRET = "tpcnice2026"; // ← Même valeur que dans index.html
+var ADMIN_EMAIL= "sylvainpoulet69@gmail.com"; // ← Ton email pour recevoir les relances
+
+// ================================================================
+// ROUTING
+// ================================================================
+function doGet(e) {
+  return json({ ok: true, service: "FacturePro v2", ts: Date.now() });
+}
+
+function doPost(e) {
+  try {
+    var body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
+    var action = String(body.action || "").trim();
+
+    // staffLogin n'a pas besoin de secret
+    if (action !== "staffLogin" && body.secret !== APP_SECRET) {
+      return json({ ok: false, error: "Non autorisé" });
+    }
+
+    switch (action) {
+      case "staffLogin":      return staffLogin(body);
+      case "listStaff":       return listStaff();
+      case "listClients":     return listClients();
+      case "upsertClient":    return upsertClient(body.client);
+      case "listProduits":    return listProduits();
+      case "upsertProduit":   return upsertProduit(body.produit);
+      case "deleteProduit":   return deleteProduit(body.id);
+      case "listFactures":    return listFactures(body);
+      case "createFacture":   return createFacture(body);
+      case "updateFacture":   return updateFacture(body);
+      case "addPaiement":     return addPaiement(body);
+      case "createAvoir":     return createAvoir(body);
+      case "creditSolde":     return creditSolde(body);
+      case "sendRelance":     return sendRelance(body);
+      case "sendEmail":       return sendEmail(body);
+      case "getConfig":       return getConfig();
+      case "saveConfig":      return saveConfig(body.config);
+      case "getStats":        return getStats();
+      default:
+        return json({ ok: false, error: "Action inconnue: " + action });
+    }
+  } catch (err) {
+    return json({ ok: false, error: err.toString() });
+  }
+}
+
+// ================================================================
+// HELPERS
+// ================================================================
+function ss() {
+  if (!SS_ID) throw new Error("SS_ID non configuré — collez l'ID du Google Sheet ligne 3");
+  return SpreadsheetApp.openById(SS_ID);
+}
+function sh(name) {
+  var s = ss().getSheetByName(name);
+  if (!s) throw new Error("Onglet manquant: " + name);
+  return s;
+}
+function json(obj, code) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+function now()  { return new Date().toISOString(); }
+function today(){ return new Date().toISOString().slice(0,10); }
+function heure(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+function uid(p) { return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9999); }
+function num(v) { var n=parseFloat(String(v||0).replace(",",".")); return isFinite(n)?n:0; }
+function bool(v){ return v===true||v==="OUI"||v==="true"; }
+
+// ================================================================
+// STAFF
+// ================================================================
+// Colonnes : code | nom | role | actif
+function staffLogin(body) {
+  var code = String(body.code||"").trim().toUpperCase();
+  if (!code) return json({ ok: false, error: "Code requis" });
+  var data = sh("Staff").getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    if (String(r[0]||"").trim().toUpperCase() === code && bool(r[3])) {
+      return json({ ok: true, staff: { code:r[0], nom:r[1], role:r[2] } });
+    }
+  }
+  return json({ ok: false, error: "Code staff invalide" });
+}
+function listStaff() {
+  var data = sh("Staff").getDataRange().getValues();
+  var res = [];
+  for (var i=1;i<data.length;i++) {
+    if(data[i][0]&&bool(data[i][3])) res.push({code:data[i][0],nom:data[i][1],role:data[i][2]});
+  }
+  return json({ ok:true, staff:res });
+}
+
+// ================================================================
+// CONFIG — Colonnes: cle | valeur
+// ================================================================
+function getConfig() {
+  var data = sh("Config").getDataRange().getValues();
+  var cfg = {};
+  for (var i=1;i<data.length;i++) { if(data[i][0]) cfg[data[i][0]]=data[i][1]; }
+  return json({ ok:true, config:cfg });
+}
+function saveConfig(cfg) {
+  if(!cfg) return json({ok:false,error:"Données manquantes"});
+  var s = sh("Config");
+  var data = s.getDataRange().getValues();
+  Object.keys(cfg).forEach(function(k){
+    var found=false;
+    for(var i=1;i<data.length;i++){
+      if(String(data[i][0]||"").trim()===k){ s.getRange(i+1,2).setValue(cfg[k]); found=true; break; }
+    }
+    if(!found) s.appendRow([k, cfg[k]]);
+  });
+  return json({ok:true});
+}
+
+// ================================================================
+// CLIENTS
+// Colonnes: id|prenom|nom|tel|email|ville|solde|certif|cgv|licence|tags|notes|derniereVisite|createdAt|updatedAt
+// ================================================================
+function listClients() {
+  var data = sh("Clients").getDataRange().getValues();
+  var res=[];
+  for(var i=1;i<data.length;i++){
+    var r=data[i]; if(!r[0]) continue;
+    res.push(rowToClient(r));
+  }
+  return json({ok:true,clients:res});
+}
+function rowToClient(r){
+  return {
+    id:r[0]||"",prenom:r[1]||"",nom:r[2]||"",tel:r[3]||"",email:r[4]||"",
+    ville:r[5]||"",solde:num(r[6]),certif:bool(r[7]),cgv:bool(r[8]),
+    licence:r[9]||"",tags:(r[10]?String(r[10]).split(",").map(function(t){return t.trim();}).filter(Boolean):[]),
+    notes:r[11]||"",derniereVisite:r[12]||"",createdAt:r[13]||"",updatedAt:r[14]||""
+  };
+}
+function clientRow(c,id,createdAt,updatedAt){
+  return [id,c.prenom||"",c.nom||"",c.tel||"",c.email||"",c.ville||"",
+    num(c.solde||0),c.certif?"OUI":"NON",c.cgv?"OUI":"NON",
+    c.licence||"",Array.isArray(c.tags)?c.tags.join(","):(c.tags||""),
+    c.notes||"",c.derniereVisite||today(),createdAt,updatedAt];
+}
+function upsertClient(c) {
+  if(!c) return json({ok:false,error:"Données manquantes"});
+  // Validation doublon téléphone
+  var s=sh("Clients"); var data=s.getDataRange().getValues(); var ts=now();
+  for(var i=1;i<data.length;i++){
+    var match=(c.id&&data[i][0]===c.id)||(c.tel&&data[i][3]===c.tel&&(!c.id||data[i][0]!==c.id));
+    if(c.id&&data[i][0]===c.id){
+      // UPDATE
+      var row=clientRow(c,data[i][0],data[i][13]||ts,ts);
+      s.getRange(i+1,1,1,row.length).setValues([row]);
+      return json({ok:true,action:"updated",client:rowToClient(row)});
+    }
+    if(!c.id&&c.tel&&data[i][3]===c.tel){
+      return json({ok:false,error:"Téléphone déjà utilisé par "+data[i][1]+" "+data[i][2]});
+    }
+  }
+  // INSERT
+  if(!c.prenom||!c.nom||!c.tel) return json({ok:false,error:"Prénom, nom et téléphone requis"});
+  var newId=uid("cli");
+  var newRow=clientRow(c,newId,ts,ts);
+  s.appendRow(newRow);
+  return json({ok:true,action:"created",client:rowToClient(newRow)});
+}
+function creditSolde(body) {
+  var clientId=body.clientId; var montant=num(body.montant); var note=body.note||""; var staffN=body.staff||"";
+  if(!clientId||!montant) return json({ok:false,error:"clientId et montant requis"});
+  var s=sh("Clients"); var data=s.getDataRange().getValues();
+  for(var i=1;i<data.length;i++){
+    if(data[i][0]===clientId){
+      var newSolde=num(data[i][6])+montant;
+      s.getRange(i+1,7).setValue(newSolde);
+      s.getRange(i+1,15).setValue(now());
+      // Log dans Paiements comme crédit
+      sh("Paiements").appendRow([uid("pay"),"CREDIT",clientId,today(),heure(),montant,"Crédit manuel",staffN,note||"Crédit solde",now()]);
+      return json({ok:true,newSolde:newSolde});
+    }
+  }
+  return json({ok:false,error:"Client non trouvé"});
+}
+
+// ================================================================
+// PRODUITS
+// Colonnes: id|nom|emoji|categorie|prix|tva|couleur|actif
+// ================================================================
+function listProduits(){
+  var data=sh("Produits").getDataRange().getValues(); var res=[];
+  for(var i=1;i<data.length;i++){
+    var r=data[i]; if(!r[0]||r[7]==="NON"||r[7]===false) continue;
+    res.push({id:r[0],nom:r[1],emoji:r[2]||"📦",cat:r[3]||"autre",prix:num(r[4]),tva:num(r[5])||20,couleur:r[6]||"#3b82f6"});
+  }
+  return json({ok:true,produits:res});
+}
+function upsertProduit(p){
+  if(!p||!p.nom) return json({ok:false,error:"Nom requis"});
+  var s=sh("Produits"); var data=s.getDataRange().getValues();
+  var row=[p.id||uid("prod"),p.nom,p.emoji||"📦",p.cat||"autre",num(p.prix),num(p.tva)||20,p.couleur||"#3b82f6","OUI"];
+  for(var i=1;i<data.length;i++){
+    if(data[i][0]===p.id){ s.getRange(i+1,1,1,row.length).setValues([row]); return json({ok:true,action:"updated"}); }
+  }
+  s.appendRow(row);
+  return json({ok:true,action:"created",id:row[0]});
+}
+function deleteProduit(id){
+  if(!id) return json({ok:false,error:"ID requis"});
+  var s=sh("Produits"); var data=s.getDataRange().getValues();
+  for(var i=1;i<data.length;i++){
+    if(data[i][0]===id){ s.getRange(i+1,8).setValue("NON"); return json({ok:true}); }
+  }
+  return json({ok:false,error:"Produit non trouvé"});
+}
+
+// ================================================================
+// FACTURES
+// Colonnes Factures: id|clientId|date|echeance|statut|notes|staff|createdAt|updatedAt|fromCaisse
+// Colonnes Lignes:   id|factureId|desc|emoji|qte|pu|prixSaisi|remisePct|remiseEur|tva|produitId
+// Colonnes Paiements:id|factureId|clientId|date|heure|montant|mode|staff|note|createdAt
+// ================================================================
+function listFactures(body){
+  var shF=sh("Factures"); var shL=sh("Lignes"); var shP=sh("Paiements");
+  var fData=shF.getDataRange().getValues();
+  var lData=shL.getDataRange().getValues();
+  var pData=shP.getDataRange().getValues();
+  // Index lignes
+  var lMap={};
+  for(var i=1;i<lData.length;i++){
+    var fid=lData[i][1]; if(!fid) continue;
+    if(!lMap[fid]) lMap[fid]=[];
+    lMap[fid].push({id:lData[i][0],factureId:fid,desc:lData[i][2],emoji:lData[i][3],
+      qte:num(lData[i][4])||1,pu:num(lData[i][5]),prixSaisi:num(lData[i][6]),
+      remisePct:num(lData[i][7]),remiseEur:num(lData[i][8]),tva:num(lData[i][9])||20,produitId:lData[i][10]||""});
+  }
+  // Index paiements
+  var pMap={};
+  for(var j=1;j<pData.length;j++){
+    var pfid=pData[j][1]; if(!pfid) continue;
+    if(!pMap[pfid]) pMap[pfid]=[];
+    pMap[pfid].push({id:pData[j][0],factureId:pfid,clientId:pData[j][2],
+      date:pData[j][3],heure:pData[j][4],montant:num(pData[j][5]),
+      mode:pData[j][6],staff:pData[j][7],note:pData[j][8],createdAt:pData[j][9]});
+  }
+  var res=[];
+  for(var k=1;k<fData.length;k++){
+    var r=fData[k]; if(!r[0]) continue;
+    var f={id:r[0],clientId:r[1],date:r[2],echeance:r[3],statut:r[4],notes:r[5],staff:r[6],
+      createdAt:r[7],updatedAt:r[8],fromCaisse:bool(r[9]),
+      lignes:lMap[r[0]]||[],paiements:pMap[r[0]]||[]};
+    if(body&&body.clientId&&f.clientId!==body.clientId) continue;
+    res.push(f);
+  }
+  return json({ok:true,factures:res});
+}
+function genFactureId(){
+  var data=sh("Factures").getDataRange().getValues();
+  var yr=new Date().getFullYear().toString(); var max=0;
+  for(var i=1;i<data.length;i++){
+    var id=String(data[i][0]||"");
+    if(id.indexOf(yr+"-")===0){ var n=parseInt(id.split("-")[1])||0; if(n>max)max=n; }
+  }
+  return yr+"-"+("0000"+(max+1)).slice(-4);
+}
+function createFacture(body){
+  var f=body.facture; if(!f) return json({ok:false,error:"Données manquantes"});
+  var id=genFactureId(); var ts=now();
+  sh("Factures").appendRow([id,f.clientId||"",f.date||today(),f.echeance||f.date||today(),
+    f.statut||"envoyée",f.notes||"",f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
+  (f.lignes||[]).forEach(function(l){
+    sh("Lignes").appendRow([uid("lig"),id,l.desc||"",l.emoji||"",num(l.qte)||1,
+      num(l.pu),num(l.prixSaisi||l.pu),num(l.remisePct||0),num(l.remiseEur||0),num(l.tva)||20,l.produitId||""]);
+  });
+  (f.paiements||[]).forEach(function(p){
+    sh("Paiements").appendRow([uid("pay"),id,f.clientId||"",p.date||today(),p.heure||heure(),
+      num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
+  });
+  if(f.clientId) updateClientVisite(f.clientId);
+  if(f.clientId) updateClientSoldeCompte(f.clientId, f.paiements||[]);
+  return json({ok:true,id:id});
+}
+function updateFacture(body){
+  if(!body.id) return json({ok:false,error:"ID requis"});
+  var s=sh("Factures"); var data=s.getDataRange().getValues(); var ts=now();
+  for(var i=1;i<data.length;i++){
+    if(data[i][0]===body.id){
+      if(body.statut!==undefined) s.getRange(i+1,5).setValue(body.statut);
+      if(body.notes!==undefined) s.getRange(i+1,6).setValue(body.notes);
+      if(body.echeance!==undefined) s.getRange(i+1,4).setValue(body.echeance);
+      s.getRange(i+1,9).setValue(ts);
+      return json({ok:true});
+    }
+  }
+  return json({ok:false,error:"Facture non trouvée"});
+}
+function addPaiement(body){
+  var p=body.paiement; if(!p||!p.factureId) return json({ok:false,error:"Données manquantes"});
+  var ts=now();
+  sh("Paiements").appendRow([uid("pay"),p.factureId,p.clientId||"",p.date||today(),p.heure||heure(),
+    num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
+  if(p.mode==="Compte"&&p.clientId) {
+    var sc=sh("Clients"); var dc=sc.getDataRange().getValues();
+    for(var i=1;i<dc.length;i++){
+      if(dc[i][0]===p.clientId){ sc.getRange(i+1,7).setValue(num(dc[i][6])-num(p.montant)); break; }
+    }
+  }
+  var newStatut=recalcStatut(p.factureId);
+  updateFacture({id:p.factureId,statut:newStatut});
+  return json({ok:true,statut:newStatut});
+}
+function recalcStatut(factureId){
+  var lData=sh("Lignes").getDataRange().getValues();
+  var pData=sh("Paiements").getDataRange().getValues();
+  var fData=sh("Factures").getDataRange().getValues();
+  var total=0;
+  for(var i=1;i<lData.length;i++){
+    if(lData[i][1]!==factureId) continue;
+    var pu=num(lData[i][6]||lData[i][5]); var qte=num(lData[i][4])||1;
+    var ht=pu*qte*(1-num(lData[i][7])/100)-num(lData[i][8])*qte;
+    total+=ht*(1+num(lData[i][9])/100);
+  }
+  total=Math.round(total*100)/100;
+  var paye=0;
+  for(var j=1;j<pData.length;j++){ if(pData[j][1]===factureId) paye+=num(pData[j][5]); }
+  paye=Math.round(paye*100)/100;
+  var reste=Math.round((total-paye)*100)/100;
+  if(reste<=0) return "payée";
+  if(paye>0)   return "partiellement payée";
+  for(var k=1;k<fData.length;k++){
+    if(fData[k][0]===factureId){
+      var ech=fData[k][3]; if(ech&&new Date(ech)<new Date()) return "en retard"; break;
+    }
+  }
+  return "envoyée";
+}
+function createAvoir(body){
+  var factureId=body.factureId; var staffN=body.staff||""; var notes=body.notes||"Avoir";
+  if(!factureId) return json({ok:false,error:"factureId requis"});
+  var fData=sh("Factures").getDataRange().getValues();
+  var lData=sh("Lignes").getDataRange().getValues();
+  var origF=null;
+  for(var i=1;i<fData.length;i++){ if(fData[i][0]===factureId){origF=fData[i];break;} }
+  if(!origF) return json({ok:false,error:"Facture non trouvée"});
+  var avoirId=genFactureId(); var ts=now();
+  sh("Factures").appendRow([avoirId,origF[1],today(),today(),"avoir","Avoir de "+factureId+" — "+notes,staffN,ts,ts,"NON"]);
+  for(var j=1;j<lData.length;j++){
+    var l=lData[j]; if(l[1]!==factureId) continue;
+    sh("Lignes").appendRow([uid("lig"),avoirId,l[2],l[3],num(l[4]),-Math.abs(num(l[5])),-Math.abs(num(l[6])),0,0,num(l[9]),l[10]]);
+  }
+  updateFacture({id:factureId,statut:"avoir",notes:"Avoir créé: "+avoirId});
+  return json({ok:true,avoirId:avoirId});
+}
+
+// ================================================================
+// RELANCES
+// ================================================================
+function sendRelance(body){
+  var factureId=body.factureId; var staffN=body.staff||"";
+  if(!factureId) return json({ok:false,error:"factureId requis"});
+  // Chercher facture + client
+  var fData=sh("Factures").getDataRange().getValues();
+  var lData=sh("Lignes").getDataRange().getValues();
+  var pData=sh("Paiements").getDataRange().getValues();
+  var cData=sh("Clients").getDataRange().getValues();
+  var origF=null;
+  for(var i=1;i<fData.length;i++){ if(fData[i][0]===factureId){origF=fData[i];break;} }
+  if(!origF) return json({ok:false,error:"Facture non trouvée"});
+  var clientId=origF[1];
+  var client=null;
+  for(var j=1;j<cData.length;j++){ if(cData[j][0]===clientId){client=cData[j];break;} }
+  if(!client||!client[4]) return json({ok:false,error:"Email client manquant"});
+  // Calculer reste
+  var total=0;
+  for(var k=1;k<lData.length;k++){
+    if(lData[k][1]!==factureId) continue;
+    var pu=num(lData[k][6]||lData[k][5]); var qte=num(lData[k][4])||1;
+    var ht=pu*qte*(1-num(lData[k][7])/100)-num(lData[k][8])*qte;
+    total+=ht*(1+num(lData[k][9])/100);
+  }
+  var paye=0;
+  for(var m=1;m<pData.length;m++){ if(pData[m][1]===factureId) paye+=num(pData[m][5]); }
+  var reste=Math.round((total-paye)*100)/100;
+  // Jours de retard
+  var echeance=origF[3]; var jours=0;
+  if(echeance){ jours=Math.max(0,Math.floor((new Date()-new Date(echeance))/86400000)); }
+  // Niveau relance
+  var niveau=jours<8?"rappel":jours<16?"relance":jours<31?"ferme":"litige";
+  var niveauTxt=jours<8?"Rappel de paiement":jours<16?"Relance":jours<31?"Relance ferme":"Mise en demeure";
+  var cfg={}; try{ var cfgData=sh("Config").getDataRange().getValues(); for(var ci=1;ci<cfgData.length;ci++){ if(cfgData[ci][0]) cfg[cfgData[ci][0]]=cfgData[ci][1]; } }catch(e){}
+  var nomClub=cfg.nom||"Tennis & Padel Club Nice";
+  var emailClub=cfg.email||ADMIN_EMAIL||Session.getActiveUser().getEmail();
+  var nomClient=String(client[1]||"")+" "+String(client[2]||"");
+  var emailClient=String(client[4]||"");
+  var subject=niveauTxt+" — Facture "+factureId+" — "+nomClub;
+  var corps = jours<8
+    ? "Bonjour "+nomClient+",\n\nNous vous rappelons que la facture n°"+factureId+" d'un montant de "+reste.toFixed(2)+"€ est due depuis le "+echeance+".\n\nMerci de procéder au règlement.\n\nCordialement,\n"+nomClub
+    : jours<16
+    ? "Bonjour "+nomClient+",\n\nSans réponse de votre part concernant la facture n°"+factureId+" ("+reste.toFixed(2)+"€), nous vous relançons une seconde fois.\n\nÉchéance dépassée de "+jours+" jours.\n\nMerci de régulariser rapidement.\n\nCordialement,\n"+nomClub
+    : jours<31
+    ? "Bonjour "+nomClient+",\n\nMalgré nos relances, la facture n°"+factureId+" ("+reste.toFixed(2)+"€) reste impayée depuis "+jours+" jours.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n"+nomClub
+    : "Bonjour "+nomClient+",\n\nLa facture n°"+factureId+" ("+reste.toFixed(2)+"€) est impayée depuis "+jours+" jours.\n\nSans règlement sous 5 jours, nous nous verrons contraints d'engager des démarches de recouvrement.\n\nCordialement,\n"+nomClub;
+  MailApp.sendEmail({to:emailClient, cc:emailClub, subject:subject, body:corps});
+  // Log relance dans Factures
+  var notes=origF[5]||"";
+  notes+=(notes?"\n":"")+"Relance "+niveauTxt+" envoyée le "+today()+" par "+staffN;
+  updateFacture({id:factureId,notes:notes});
+  // Mettre à jour statut si en retard
+  if(origF[4]==="envoyée"&&jours>0) updateFacture({id:factureId,statut:"en retard"});
+  return json({ok:true,niveau:niveau,jours:jours,emailEnvoye:emailClient});
+}
+
+function sendEmail(body){
+  var clientId=body.clientId; var sujet=body.sujet||"Message du club"; var message=body.message||"";
+  if(!clientId||!message) return json({ok:false,error:"clientId et message requis"});
+  var cData=sh("Clients").getDataRange().getValues();
+  for(var i=1;i<cData.length;i++){
+    if(cData[i][0]===clientId){
+      var email=String(cData[i][4]||"");
+      if(!email) return json({ok:false,error:"Email client manquant"});
+      var cfg={}; try{ var cfgData=sh("Config").getDataRange().getValues(); for(var ci=1;ci<cfgData.length;ci++){ if(cfgData[ci][0]) cfg[cfgData[ci][0]]=cfgData[ci][1]; }}catch(e){}
+      var emailClub=cfg.email||ADMIN_EMAIL||Session.getActiveUser().getEmail();
+      MailApp.sendEmail({to:email, cc:emailClub, subject:sujet, body:message});
+      return json({ok:true});
+    }
+  }
+  return json({ok:false,error:"Client non trouvé"});
+}
+
+// ================================================================
+// STATS
+// ================================================================
+function getStats(){
+  var tod=today(); var mois=tod.slice(0,7);
+  var pData=sh("Paiements").getDataRange().getValues();
+  var caJour=0,caMois=0,caTotal=0;
+  for(var i=1;i<pData.length;i++){
+    var m=num(pData[i][5]); var d=String(pData[i][3]||"").slice(0,10);
+    caTotal+=m; if(d===tod)caJour+=m; if(d.slice(0,7)===mois)caMois+=m;
+  }
+  var fData=sh("Factures").getDataRange().getValues();
+  var nbRetard=0,impaye=0;
+  for(var j=1;j<fData.length;j++){
+    var st=fData[j][4];
+    if(st==="en retard") nbRetard++;
+  }
+  return json({ok:true,stats:{caJour:Math.round(caJour*100)/100,caMois:Math.round(caMois*100)/100,
+    caTotal:Math.round(caTotal*100)/100,nbRetard:nbRetard,
+    nbFactures:Math.max(0,fData.length-1),nbClients:Math.max(0,sh("Clients").getLastRow()-1)}});
+}
+
+// HELPERS INTERNES
+function updateClientVisite(clientId){
+  var s=sh("Clients"); var data=s.getDataRange().getValues();
+  for(var i=1;i<data.length;i++){
+    if(data[i][0]===clientId){ s.getRange(i+1,13).setValue(today()); s.getRange(i+1,15).setValue(now()); break; }
+  }
+}
+function updateClientSoldeCompte(clientId,paiements){
+  var compte=0;
+  (paiements||[]).forEach(function(p){ if(p.mode==="Compte") compte+=num(p.montant); });
+  if(!compte) return;
+  var s=sh("Clients"); var data=s.getDataRange().getValues();
+  for(var i=1;i<data.length;i++){
+    if(data[i][0]===clientId){ s.getRange(i+1,7).setValue(num(data[i][6])-compte); break; }
+  }
+}
