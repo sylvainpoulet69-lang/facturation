@@ -10,6 +10,10 @@ var ADMIN_EMAIL= "sylvainpoulet69@gmail.com"; // ← Ton email pour recevoir les
 // ROUTING
 // ================================================================
 function doGet(e) {
+  var action = String((e && e.parameter && e.parameter.action) || "").trim();
+  if (action === "health") {
+    return json({ ok: true, service: "FacturePro v2", ts: Date.now(), sheet: !!SS_ID });
+  }
   return json({ ok: true, service: "FacturePro v2", ts: Date.now() });
 }
 
@@ -149,22 +153,34 @@ function clientRow(c,id,createdAt,updatedAt){
 }
 function upsertClient(c) {
   if(!c) return json({ok:false,error:"Données manquantes"});
-  // Validation doublon téléphone
+  // Validation doublons téléphone/email
   var s=sh("Clients"); var data=s.getDataRange().getValues(); var ts=now();
+  var telNorm=String(c.tel||"").replace(/\s+/g,"").trim();
+  var emailNorm=String(c.email||"").trim().toLowerCase();
   for(var i=1;i<data.length;i++){
-    var match=(c.id&&data[i][0]===c.id)||(c.tel&&data[i][3]===c.tel&&(!c.id||data[i][0]!==c.id));
+    var rowId=String(data[i][0]||"").trim();
+    var rowTel=String(data[i][3]||"").replace(/\s+/g,"").trim();
+    var rowEmail=String(data[i][4]||"").trim().toLowerCase();
+    var isOther = !c.id || rowId !== c.id;
+    if (isOther && telNorm && rowTel === telNorm) {
+      return json({ok:false,error:"Téléphone déjà utilisé par "+data[i][1]+" "+data[i][2]});
+    }
+    if (isOther && emailNorm && rowEmail && rowEmail === emailNorm) {
+      return json({ok:false,error:"Email déjà utilisé par "+data[i][1]+" "+data[i][2]});
+    }
     if(c.id&&data[i][0]===c.id){
       // UPDATE
+      c.tel = telNorm;
+      c.email = emailNorm;
       var row=clientRow(c,data[i][0],data[i][13]||ts,ts);
       s.getRange(i+1,1,1,row.length).setValues([row]);
       return json({ok:true,action:"updated",client:rowToClient(row)});
     }
-    if(!c.id&&c.tel&&data[i][3]===c.tel){
-      return json({ok:false,error:"Téléphone déjà utilisé par "+data[i][1]+" "+data[i][2]});
-    }
   }
   // INSERT
-  if(!c.prenom||!c.nom||!c.tel) return json({ok:false,error:"Prénom, nom et téléphone requis"});
+  if(!c.prenom||!c.nom||!telNorm) return json({ok:false,error:"Prénom, nom et téléphone requis"});
+  c.tel = telNorm;
+  c.email = emailNorm;
   var newId=uid("cli");
   var newRow=clientRow(c,newId,ts,ts);
   s.appendRow(newRow);
