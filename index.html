@@ -119,10 +119,10 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 /* ===========================
    CAISSE
    =========================== */
-#caisse-layout{display:grid;grid-template-columns:1fr 360px;grid-template-rows:auto 1fr;gap:12px;height:calc(100vh - 120px);max-height:800px;}
+#caisse-layout{display:grid;grid-template-columns:1fr 420px;grid-template-rows:auto 1fr;gap:12px;height:calc(100vh - 110px);min-height:740px;}
 #caisse-client-bar{grid-column:1/-1;background:#fff;border-radius:12px;padding:12px 16px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
 #caisse-left{display:flex;flex-direction:column;min-height:0;overflow:hidden;}
-#caisse-right{display:flex;flex-direction:column;background:#0f172a;border-radius:14px;overflow:hidden;min-height:0;}
+#caisse-right{display:flex;flex-direction:column;background:#0f172a;border-radius:14px;overflow:hidden;min-height:0;height:100%;}
 .cats-bar{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;flex-shrink:0;}
 .cat-btn{padding:5px 12px;border-radius:20px;border:2px solid var(--line);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted);transition:all .12s;}
 .cat-btn.active{background:#1d4ed8;border-color:#1d4ed8;color:#fff;}
@@ -482,7 +482,7 @@ var P = {
 };
 
 // localStorage keys
-var LS = { clients:"fp_cli_v3", produits:"fp_prod_v3", factures:"fp_fac_v3", staff:"fp_staff_v3" };
+var LS = { clients:"fp_cli_v3", produits:"fp_prod_v3", factures:"fp_fac_v3", staff:"fp_staff_v3", backend:"fp_backend_url_v3" };
 
 // ================================================================
 // INIT
@@ -506,6 +506,21 @@ function loadLocal(){
     var s=JSON.parse(localStorage.getItem(LS.staff));
     if(s&&s.code) G.staff=s;
   }catch(e){}
+  try{
+    var be=(localStorage.getItem(LS.backend)||"").trim();
+    if(be) BACKEND_URL=be;
+  }catch(e){}
+}
+
+function saveBackendUrl(){
+  try{ localStorage.setItem(LS.backend, BACKEND_URL||""); }catch(e){}
+}
+
+function requireBackend(action){
+  if(BACKEND_URL) return true;
+  showToast("Backend requis pour "+action,"#ef4444");
+  nav("params");
+  return false;
 }
 
 function saveLocal(){
@@ -777,6 +792,7 @@ function backendWarnHTML(){
 }
 function setBE(v){
   BACKEND_URL=v.trim();
+  saveBackendUrl();
   if(BACKEND_URL){ showToast("Backend configuré !"); syncAll(); renderPage(); }
 }
 
@@ -979,7 +995,8 @@ function renderPanierInner(){
       +'<div class="pan-ligne-top" onclick="toggleEdit('+i+')">'
       +'<div class="pan-l-row">'
       +'<div><div class="pan-l-nom">'+(item.emoji||"")+" "+esc(item.desc)+'</div>'
-      +'<div class="pan-l-sub">'+item.qte+' × '+eur(item.prixSaisi)+(item.remisePct>0||item.remiseEur>0?' <span style="color:#10b981">↓remise</span>':'')+'</div></div>'
+      +'<div class="pan-l-sub">Qté: '+item.qte+' · PU: '+eur(item.prixSaisi)+'</div>'
+      +'<div class="pan-l-sub" style="color:#94a3b8;">Total ligne: '+eur(c.ttc)+(item.remisePct>0||item.remiseEur>0?' <span style="color:#10b981">↓remise</span>':'')+'</div></div>'
       +'<div class="pan-l-prix" style="color:'+(item.couleur||"#60a5fa")+';">'+eur(c.ttc)+'</div>'
       +'</div></div>';
     if(isEdit){
@@ -1084,6 +1101,7 @@ function rmPayL(i){ if(C.payLignes.length>1){ C.payLignes.splice(i,1); refreshPa
 function metEnCompte(reste){ C.payLignes.push({mode:"Compte",montant:reste.toFixed(2),note:"Mise en compte"}); refreshPayZone(); }
 
 function doEncaisser(){
+  if(!requireBackend("encaisser")) return;
   if(!C.staff){ openModal("modal-staff"); return; }
   var tot=totalPanier();
   var totalPaye=r2(C.payLignes.reduce(function(s,l){return s+(parseFloat(l.montant)||0);},0));
@@ -1111,37 +1129,27 @@ function doEncaisser(){
     createdAt:now()
   };
 
-  // Sauvegarde locale immédiate
-  DB.factures.push(facture);
-  // Mise à jour solde si mise en compte
-  if(C.clientId&&aMisEnCompte&&DB.clients[C.clientId]){
-    var delta=paiements.filter(function(p){return p.mode==="Compte";}).reduce(function(s,p){return s+p.montant;},0);
-    DB.clients[C.clientId].solde=r2((DB.clients[C.clientId].solde||0)-delta);
-    DB.clients[C.clientId].derniereVisite=today();
-  }
-  saveLocal();
-  updateBadges();
-
-  // Sync backend
-  if(BACKEND_URL){
-    api({action:"createFacture",facture:facture}, function(d){
-      if(d&&d.ok&&d.id){
-        var idx=DB.factures.findIndex(function(f){return f.id===localId;});
-        if(idx>=0){ DB.factures[idx].id=d.id; facture.id=d.id; }
-        saveLocal();
-      }
-    });
-    // Met à jour le client si identifié
-    if(C.clientId&&DB.clients[C.clientId]){
+  api({action:"createFacture",facture:facture}, function(d){
+    if(!(d&&d.ok&&d.id)){
+      showToast("Erreur création facture: "+(d&&d.error||"inconnue"),"#ef4444");
+      return;
+    }
+    facture.id=d.id;
+    DB.factures.push(facture);
+    if(C.clientId&&aMisEnCompte&&DB.clients[C.clientId]){
+      var delta=paiements.filter(function(p){return p.mode==="Compte";}).reduce(function(s,p){return s+p.montant;},0);
+      DB.clients[C.clientId].solde=r2((DB.clients[C.clientId].solde||0)-delta);
+      DB.clients[C.clientId].derniereVisite=today();
       api({action:"upsertClient",client:DB.clients[C.clientId]});
     }
-  }
-
-  // Ticket
-  showTicket(facture);
-  // Reset
-  C.panier=[]; C.payLignes=[]; C.note=""; C.especes=""; C.editIdx=-1;
-  C.clientId=null; C.anonyme=false;
+    saveLocal();
+    updateBadges();
+    showTicket(facture);
+    C.panier=[]; C.payLignes=[]; C.note=""; C.especes=""; C.editIdx=-1;
+    C.clientId=null; C.anonyme=false;
+  }, function(err){
+    showToast("Erreur backend: "+err,"#ef4444");
+  });
 }
 
 function localFactureId(){
@@ -1174,7 +1182,7 @@ function showTicket(f){
   h+='<div class="t-total"><span>TOTAL TTC</span><span>'+eur(c.ttc)+'</span></div>';
   h+='<hr class="t-sep"/>';
   (f.paiements||[]).forEach(function(p){
-    h+='<div class="t-row"><span class="t-key">'+esc(p.mode)+(p.note?" ("+esc(p.note)+")")+'</span><span class="t-val">'+eur(p.montant)+'</span></div>';
+    h+='<div class="t-row"><span class="t-key">'+esc(p.mode)+(p.note?" ("+esc(p.note)+")":"")+'</span><span class="t-val">'+eur(p.montant)+'</span></div>';
   });
   if(f.renduMonnaie>0) h+='<div style="background:#d1fae5;border-radius:6px;padding:4px 8px;margin-top:5px;font-weight:800;color:#065f46;font-size:12px;">🪙 Rendu: '+eur(f.renduMonnaie)+'</div>';
   if(c.reste>0) h+='<div style="background:#fef3c7;border-radius:6px;padding:4px 8px;margin-top:5px;font-weight:800;color:#92400e;font-size:12px;">📋 En compte: '+eur(c.reste)+'</div>';
@@ -1310,12 +1318,15 @@ function renderFactureDetail(f){
 }
 
 function changeStatut(id,statut){
+  if(!requireBackend("mettre à jour le statut")) return;
   var f=DB.factures.find(function(x){return x.id===id;});
   if(!f) return;
-  f.statut=statut; saveLocal(); updateBadges();
-  if(BACKEND_URL) api({action:"updateFacture",id:id,statut:statut},function(d){ if(d&&d.ok) showToast("Statut mis à jour"); else showToast("Erreur sync","#f59e0b"); });
-  else showToast("Statut mis à jour (local)");
-  renderFactures();
+  api({action:"updateFacture",id:id,statut:statut},function(d){
+    if(d&&d.ok){
+      f.statut=statut; saveLocal(); updateBadges(); renderFactures();
+      showToast("Statut mis à jour");
+    } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function openPayFacture(fid){
@@ -1353,6 +1364,7 @@ function selPayMode(btn,mode){
 }
 
 function doPayFacture(fid){
+  if(!requireBackend("enregistrer un paiement")) return;
   var montant=parseFloat(document.getElementById("pf-mnt").value)||0;
   var date=document.getElementById("pf-date").value||today();
   var mode=document.getElementById("pf-mode").value||"CB";
@@ -1363,17 +1375,18 @@ function doPayFacture(fid){
   var f=DB.factures.find(function(x){return x.id===fid;});
   if(!f) return;
   var p={id:uid("pay"),date:date,heure:hhmm(),montant:montant,mode:mode,staff:staff,note:note};
-  if(!f.paiements) f.paiements=[];
-  f.paiements.push(p);
-  var c=calcF(f);
-  f.statut=c.reste<=0?"payée":"partiellement payée";
-  saveLocal(); updateBadges();
-  if(BACKEND_URL){
-    api({action:"addPaiement",paiement:{factureId:fid,clientId:f.clientId||"",date:date,heure:p.heure,montant:montant,mode:mode,staff:staff,note:note}},
-      function(d){ if(d&&d.ok) showToast(eur(montant)+" enregistré ✓"); else showToast("Erreur sync","#f59e0b"); });
-  } else showToast(eur(montant)+" enregistré (local)");
-  closeModal("modal-gen");
-  renderFactures();
+  api({action:"addPaiement",paiement:{factureId:fid,clientId:f.clientId||"",date:date,heure:p.heure,montant:montant,mode:mode,staff:staff,note:note}},
+    function(d){
+      if(d&&d.ok){
+        if(!f.paiements) f.paiements=[];
+        f.paiements.push(p);
+        f.statut=d.statut || (calcF(f).reste<=0?"payée":"partiellement payée");
+        saveLocal(); updateBadges();
+        closeModal("modal-gen");
+        renderFactures();
+        showToast(eur(montant)+" enregistré ✓");
+      } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+    },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function imprimerFacture(fid){
@@ -1383,6 +1396,7 @@ function imprimerFacture(fid){
   var cl=f.clientId?DB.clients[f.clientId]:null;
   var cfg=G.config;
   var w=window.open("","_blank","width=900,height=700");
+  if(!w){ showToast("Popup bloquée: autorisez les popups pour ouvrir le PDF","#ef4444"); return; }
   var lignesH=(f.lignes||[]).map(function(l){
     var lc=calcLigne(l);
     return '<tr>'
@@ -1450,29 +1464,13 @@ function envoyerRelance(fid){
 }
 
 function creerAvoir(fid){
+  if(!requireBackend("créer un avoir")) return;
   if(!confirm("Créer un avoir pour la facture "+fid+" ?")) return;
   var staff=G.staff?G.staff.nom:(C.staff||"");
-  if(BACKEND_URL){
-    api({action:"createAvoir",factureId:fid,staff:staff},function(d){
-      if(d&&d.ok){ showToast("Avoir créé: "+d.avoirId); syncAll(); }
-      else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-    });
-  } else {
-    // Local
-    var f=DB.factures.find(function(x){return x.id===fid;});
-    if(!f) return;
-    var avoirId=localFactureId();
-    var avoir={
-      id:avoirId, clientId:f.clientId, date:today(), echeance:today(),
-      statut:"avoir", notes:"Avoir de "+fid, staff:staff, fromCaisse:false,
-      lignes:(f.lignes||[]).map(function(l){ return Object.assign({},l,{prixSaisi:-Math.abs(l.prixSaisi),pu:-Math.abs(l.pu)}); }),
-      paiements:[], createdAt:now()
-    };
-    DB.factures.push(avoir);
-    var orig=DB.factures.find(function(x){return x.id===fid;});
-    if(orig) orig.statut="avoir";
-    saveLocal(); showToast("Avoir créé: "+avoirId+" (local)"); renderFactures();
-  }
+  api({action:"createAvoir",factureId:fid,staff:staff},function(d){
+    if(d&&d.ok){ showToast("Avoir créé: "+d.avoirId); syncAll(); }
+    else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function openFactureDetail(fid){ nav("factures"); setTimeout(function(){ P.selFacId=fid; renderFactures(); },100); }
@@ -1580,7 +1578,7 @@ function renderClients(){
 }
 
 function openNewClient(prefill){
-  set("mec-title",prefill?"Nouveau client":"Nouveau client");
+  set("mec-title",prefill?"Modifier client":"Nouveau client");
   var p=prefill||{};
   set("mec-body",'<div class="form-grid form-grid-2">'
     +'<div class="form-row"><label class="lbl">Prénom *</label><input class="inp" id="nc-p" value="'+esc(p.prenom||"")+'" placeholder="Prénom"/></div>'
@@ -1596,40 +1594,49 @@ function openNewClient(prefill){
     +'<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;margin-left:10px;"><input type="checkbox" id="nc-cgv" '+(p.cgv?"checked":"")+'> CGV acceptées</label>'
     +'</div>'
     +'<div style="display:flex;gap:8px;margin-top:14px;">'
-    +'<button class="btn btn-green btn-full" onclick="doSaveClient(null)">✓ Enregistrer</button>'
+    +'<button class="btn btn-green btn-full" onclick="doSaveClient(\''+esc(p.id||"")+'\')">✓ Enregistrer</button>'
     +'<button class="btn btn-soft" onclick="closeModal(\'modal-edit-client\')">Annuler</button>'
     +'</div>');
   openModal("modal-edit-client");
 }
 
 function doSaveClient(existingId){
+  if(!requireBackend("enregistrer un client")) return;
   var prenom=(document.getElementById("nc-p").value||"").trim();
   var nom=(document.getElementById("nc-n").value||"").trim();
   var tel=(document.getElementById("nc-t").value||"").replace(/\s/g,"").trim();
-  var email=(document.getElementById("nc-e").value||"").trim();
+  var email=(document.getElementById("nc-e").value||"").trim().toLowerCase();
   var ville=(document.getElementById("nc-v").value||"").trim();
   var licence=(document.getElementById("nc-l").value||"").trim();
   var notes=(document.getElementById("nc-no").value||"").trim();
   var certif=document.getElementById("nc-certif").checked;
   var cgv=document.getElementById("nc-cgv").checked;
   if(!prenom||!nom||!tel){ showToast("Prénom, nom et téléphone requis","#ef4444"); return; }
-  // Doublon téléphone
-  var dupl=Object.values(DB.clients).find(function(c){ return c.tel===tel&&c.id!==existingId; });
-  if(dupl){ showToast("Téléphone déjà utilisé: "+dupl.prenom+" "+dupl.nom,"#ef4444"); return; }
-  var id=existingId||uid("cli");
+  var duplTel=Object.values(DB.clients).find(function(c){ return String(c.tel||"").replace(/\s/g,"")===tel&&c.id!==existingId; });
+  if(duplTel){ showToast("Téléphone déjà utilisé: "+duplTel.prenom+" "+duplTel.nom,"#ef4444"); return; }
+  var duplEmail=email?Object.values(DB.clients).find(function(c){ return String(c.email||"").toLowerCase()===email&&c.id!==existingId; }):null;
+  if(duplEmail){ showToast("Email déjà utilisé: "+duplEmail.prenom+" "+duplEmail.nom,"#ef4444"); return; }
+
+  var id=existingId||"";
   var existing=DB.clients[id]||{};
   var client=Object.assign({},existing,{id:id,prenom:prenom,nom:nom,tel:tel,email:email,ville:ville,licence:licence,notes:notes,certif:certif,cgv:cgv,
     tags:existing.tags||[],solde:existing.solde||0,derniereVisite:existing.derniereVisite||today(),createdAt:existing.createdAt||now()});
-  DB.clients[id]=client;
-  saveLocal();
-  if(BACKEND_URL){
-    api({action:"upsertClient",client:client},function(d){
-      if(d&&d.ok){ showToast(existingId?"Client mis à jour ✓":"Client créé ✓"); if(d.client) DB.clients[d.client.id]=d.client; saveLocal(); }
-      else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-    });
-  } else showToast((existingId?"Client mis à jour":"Client créé")+" (local)");
-  closeModal("modal-edit-client");
-  if(G.page==="clients") renderClients();
+
+  api({action:"upsertClient",client:client},function(d){
+    if(d&&d.ok&&d.client){
+      DB.clients[d.client.id]=d.client;
+      if(id&&id!==d.client.id) delete DB.clients[id];
+      saveLocal();
+      closeModal("modal-edit-client");
+      showToast(existingId?"Client mis à jour ✓":"Client créé ✓");
+      if(G.page==="clients") renderClients();
+      if(G.page==="caisse") renderCaisse();
+    } else {
+      showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+    }
+  },function(err){
+    showToast("Erreur backend: "+err,"#ef4444");
+  });
 }
 
 function openFiche(id){
@@ -1698,24 +1705,18 @@ function openCreditSolde(clientId){
 }
 
 function doCreditSolde(clientId){
+  if(!requireBackend("créditer le solde")) return;
   var montant=parseFloat(document.getElementById("cs-mnt").value)||0;
   var note=document.getElementById("cs-note").value||"";
   var staff=document.getElementById("cs-staff").value||"";
   if(!montant){ showToast("Montant requis","#ef4444"); return; }
   var c=DB.clients[clientId];
   if(!c) return;
-  c.solde=r2((c.solde||0)+montant);
-  saveLocal();
   closeModal("modal-gen");
-  if(BACKEND_URL){
-    api({action:"creditSolde",clientId:clientId,montant:montant,note:note,staff:staff},function(d){
-      if(d&&d.ok){ showToast("Solde crédité: +"+eur(montant)+" → "+eur(d.newSolde)); if(d.newSolde!==undefined) c.solde=d.newSolde; saveLocal(); openFiche(clientId); }
-      else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-    });
-  } else {
-    showToast("Solde crédité: +"+eur(montant)+" (local)");
-    openFiche(clientId);
-  }
+  api({action:"creditSolde",clientId:clientId,montant:montant,note:note,staff:staff},function(d){
+    if(d&&d.ok){ showToast("Solde crédité: +"+eur(montant)+" → "+eur(d.newSolde)); if(d.newSolde!==undefined) c.solde=d.newSolde; saveLocal(); openFiche(clientId); }
+    else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function openEmailClient(clientId){
@@ -1750,6 +1751,7 @@ function imprimerReleve(clientId){
   var ca=r2(cf.reduce(function(s,f){return s+calcF(f).paye;},0));
   var cfg=G.config;
   var w=window.open("","_blank","width=860,height=650");
+  if(!w){ showToast("Popup bloquée: autorisez les popups pour ouvrir le PDF","#ef4444"); return; }
   var lignesH=cf.map(function(f){
     var fc=calcF(f);
     return '<tr>'
@@ -1856,6 +1858,7 @@ function openEditProd(id){
 }
 
 function doSaveProd(id){
+  if(!requireBackend("enregistrer un produit")) return;
   var nom=(document.getElementById("pp-nom").value||"").trim();
   var emoji=document.getElementById("pp-emoji").value||"📦";
   var cat=document.getElementById("pp-cat").value||"autre";
@@ -1865,28 +1868,31 @@ function doSaveProd(id){
   if(!nom||!prix){ showToast("Nom et prix requis","#ef4444"); return; }
   var pid=id||uid("prod");
   var prod={id:pid,nom:nom,emoji:emoji,cat:cat,prix:prix,tva:tva,couleur:couleur};
-  var idx=DB.produits.findIndex(function(p){return p.id===pid;});
-  if(idx>=0) DB.produits[idx]=prod; else DB.produits.push(prod);
-  saveLocal();
-  if(BACKEND_URL){
-    api({action:"upsertProduit",produit:prod},function(d){
-      if(d&&d.ok) showToast(id?"Produit mis à jour ✓":"Produit créé ✓");
-      else showToast("Erreur sync","#f59e0b");
-    });
-  } else showToast(id?"Produit mis à jour (local)":"Produit créé (local)");
-  closeModal("modal-produit");
-  renderProduits();
+  api({action:"upsertProduit",produit:prod},function(d){
+    if(d&&d.ok){
+      var idx=DB.produits.findIndex(function(p){return p.id===pid;});
+      if(idx>=0) DB.produits[idx]=prod; else DB.produits.push(prod);
+      saveLocal();
+      closeModal("modal-produit");
+      renderProduits();
+      showToast(id?"Produit mis à jour ✓":"Produit créé ✓");
+    } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function doDeleteProd(id){
+  if(!requireBackend("supprimer un produit")) return;
   var p=DB.produits.find(function(x){return x.id===id;});
   if(!p) return;
   if(!confirm("Supprimer: "+p.nom+" ?")) return;
-  DB.produits=DB.produits.filter(function(x){return x.id!==id;});
-  saveLocal();
-  if(BACKEND_URL) api({action:"deleteProduit",id:id},function(d){ if(d&&d.ok) showToast("Produit supprimé"); });
-  else showToast("Produit supprimé (local)");
-  renderProduits();
+  api({action:"deleteProduit",id:id},function(d){
+    if(d&&d.ok){
+      DB.produits=DB.produits.filter(function(x){return x.id!==id;});
+      saveLocal();
+      renderProduits();
+      showToast("Produit supprimé");
+    } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 // ================================================================
@@ -1990,7 +1996,7 @@ function renderParams(){
 
 function doSaveParams(){
   var be=(document.getElementById("pm-backend").value||"").trim();
-  if(be!==BACKEND_URL){ BACKEND_URL=be; if(BACKEND_URL) syncAll(); }
+  if(be!==BACKEND_URL){ BACKEND_URL=be; saveBackendUrl(); if(BACKEND_URL) syncAll(); }
   var updCfg={
     nom:document.getElementById("pm-nom").value||G.config.nom,
     adresse:document.getElementById("pm-adresse").value||G.config.adresse,
@@ -2022,9 +2028,14 @@ function testBackend(){
   showToast("Test en cours…","#f59e0b",8000);
   var old=BACKEND_URL; BACKEND_URL=url;
   api({action:"getConfig"},function(d){
-    BACKEND_URL=old;
-    if(d&&d.ok) showToast("✅ Backend opérationnel ! Config: "+(d.config&&d.config.nom||"OK"));
-    else showToast("❌ Backend répond mais erreur: "+(d&&d.error||"?"),"#ef4444");
+    if(d&&d.ok){
+      BACKEND_URL=url;
+      saveBackendUrl();
+      showToast("✅ Backend opérationnel ! Config: "+(d.config&&d.config.nom||"OK"));
+    } else {
+      BACKEND_URL=old;
+      showToast("❌ Backend répond mais erreur: "+(d&&d.error||"?"),"#ef4444");
+    }
   },function(e){ BACKEND_URL=old; showToast("❌ Impossible de joindre le backend: "+e,"#ef4444"); });
 }
 
