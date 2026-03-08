@@ -471,7 +471,22 @@ var DB = { clients: {}, produits: [], factures: [] };
 // État caisse
 var C = {
   clientId: null, anonyme: false, panier: [], payLignes: [],
-  staff: "", note: "", especes: "", editIdx: -1, cliQ: ""
+  staff: "", note: "", especes: "", editIdx: -1, cliQ: "", checkoutToken: null
+};
+
+var UI = {
+  pending: {
+    encaisser: false,
+    saveClient: false,
+    saveProduit: false,
+    payFacture: false,
+    relance: false,
+    creditSolde: false,
+    sendEmail: false,
+    createAvoir: false,
+    updateFacture: false
+  },
+  apiInFlight: 0
 };
 
 // État pages
@@ -532,6 +547,11 @@ function saveLocal(){
 // ================================================================
 // API
 // ================================================================
+function setSyncIndicator(){
+  var ind = document.getElementById("sync-ind");
+  if(ind) ind.style.display = UI.apiInFlight>0 ? "block" : "none";
+}
+
 function api(payload, cb, errCb){
   if(!BACKEND_URL){
     if(errCb) errCb("Backend non configuré");
@@ -539,8 +559,8 @@ function api(payload, cb, errCb){
     return;
   }
   payload.secret = APP_SECRET;
-  var ind = document.getElementById("sync-ind");
-  if(ind) ind.style.display = "block";
+  UI.apiInFlight++;
+  setSyncIndicator();
   fetch(BACKEND_URL,{
     method:"POST",
     headers:{"Content-Type":"text/plain"},
@@ -548,14 +568,16 @@ function api(payload, cb, errCb){
   })
   .then(function(r){ return r.json(); })
   .then(function(d){
-    if(ind) ind.style.display="none";
     if(d && d.ok===false && errCb) errCb(d.error||"Erreur");
     else if(cb) cb(d);
   })
   .catch(function(e){
-    if(ind) ind.style.display="none";
     if(errCb) errCb(e.toString());
     else if(cb) cb(null);
+  })
+  .finally(function(){
+    UI.apiInFlight=Math.max(0,UI.apiInFlight-1);
+    setSyncIndicator();
   });
 }
 
@@ -708,6 +730,33 @@ function openModal(id){ document.getElementById(id).classList.add("open"); }
 function closeModal(id){ document.getElementById(id).classList.remove("open"); }
 function set(id,html){ var el=document.getElementById(id); if(el) el.innerHTML=html; }
 function setContent(html){ document.getElementById("content").innerHTML=html; }
+
+function setBtnLoading(selector,isLoading,label){
+  var btn=document.querySelector(selector);
+  if(!btn) return;
+  if(isLoading){
+    btn.dataset.prevText=btn.textContent;
+    btn.textContent=label;
+    btn.disabled=true;
+    btn.style.opacity="0.7";
+    btn.style.cursor="wait";
+  } else {
+    btn.textContent=btn.dataset.prevText||btn.textContent;
+    btn.disabled=false;
+    btn.style.opacity="";
+    btn.style.cursor="";
+  }
+}
+
+function isPending(key){ return !!UI.pending[key]; }
+function setPending(key,val){ UI.pending[key]=!!val; }
+function withPending(key, fn){
+  if(isPending(key)) return false;
+  setPending(key,true);
+  try { fn(); } catch(e){ setPending(key,false); throw e; }
+  return true;
+}
+
 
 // ================================================================
 // STAFF
@@ -939,11 +988,7 @@ function addProd(id){
   if(idx>=0) C.panier[idx].qte++;
   else C.panier.push({produitId:p.id,desc:p.nom,emoji:p.emoji,couleur:p.couleur,qte:1,pu:p.prix,prixSaisi:p.prix,remisePct:0,remiseEur:0,tva:p.tva||20});
   syncPayLignes();
-  // Refresh seulement la grille et le panier pour ne pas perdre le focus
-  var pg=document.getElementById("prod-grid-inner");
-  if(pg) pg.innerHTML=renderProdGridInner();
-  var pr=document.getElementById("panier-right");
-  if(pr) pr.innerHTML=renderPanierInner();
+  renderCaisse();
 }
 
 function openArticleLibre(){
@@ -967,10 +1012,7 @@ function doAddLibre(){
   C.panier.push({produitId:"libre_"+Date.now(),desc:d,emoji:"✏️",couleur:"#6366f1",qte:q,pu:p,prixSaisi:p,remisePct:0,remiseEur:0,tva:t});
   closeModal("modal-gen");
   syncPayLignes();
-  var pg=document.getElementById("prod-grid-inner");
-  if(pg) pg.innerHTML=renderProdGridInner();
-  var pr=document.getElementById("panier-right");
-  if(pr) pr.innerHTML=renderPanierInner();
+  renderCaisse();
 }
 
 // Panier
@@ -979,7 +1021,7 @@ function renderPanier(){
     +'<span class="ph-title">🛒 Panier ('+(C.panier.length)+')</span>'
     +(C.panier.length?'<button class="ph-vider" onclick="viderPanier()">Vider</button>':'')
     +'</div>'
-    +'<div id="panier-items" style="flex:1;overflow-y:auto;padding:7px;" id="panier-right">'
+    +'<div id="panier-items" style="flex:1;overflow-y:auto;padding:7px;">'
     +renderPanierInner()
     +'</div>'
     +(C.panier.length?'<div id="pay-zone">'+renderPayZone()+'</div>':'')
@@ -1029,8 +1071,8 @@ function renderPanierInner(){
   }).join("");
 }
 
-function toggleEdit(i){ C.editIdx=C.editIdx===i?-1:i; var pr=document.getElementById("panier-right"); if(pr) pr.innerHTML=renderPanierInner(); }
-function setPanier(i,upd){ Object.assign(C.panier[i],upd); syncPayLignes(); var pr=document.getElementById("panier-right"); if(pr) pr.innerHTML=renderPanierInner(); var pz=document.getElementById("pay-zone"); if(pz) pz.innerHTML=renderPayZone(); }
+function toggleEdit(i){ C.editIdx=C.editIdx===i?-1:i; var pr=document.getElementById("panier-items"); if(pr) pr.innerHTML=renderPanierInner(); }
+function setPanier(i,upd){ Object.assign(C.panier[i],upd); syncPayLignes(); var pr=document.getElementById("panier-items"); if(pr) pr.innerHTML=renderPanierInner(); var pz=document.getElementById("pay-zone"); if(pz) pz.innerHTML=renderPayZone(); }
 function delLigne(i){ C.panier.splice(i,1); C.editIdx=-1; syncPayLignes(); renderCaisse(); }
 function viderPanier(){ if(!confirm("Vider le panier ?")) return; C.panier=[]; C.payLignes=[]; C.note=""; C.especes=""; C.editIdx=-1; renderCaisse(); }
 
@@ -1088,9 +1130,10 @@ function renderPayZone(){
       +(hasCli?'<button class="btn-sur-compte" onclick="metEnCompte('+reste+')">📋 Sur compte</button>':'<span style="font-size:10px;color:#475569;">Sélectionner un client</span>')
       +'</div>';
   }
+  var encaisserBusy=isPending("encaisser");
   h+='<textarea class="note-sale" rows="1" placeholder="📝 Note sur la vente…" onchange="C.note=this.value">'+esc(C.note)+'</textarea>';
-  h+='<button class="btn-encaisser '+(canPay?"ready":"nope")+'" onclick="'+(canPay?"doEncaisser()":"(C.staff?null:openModal(\'modal-staff\'))")+'">'+
-    (canPay?"✓ Encaisser "+eur(tot):(staffOk?"En attente de montant…":"⚠️ Connexion staff requise"))+'</button>';
+  h+='<button class="btn-encaisser '+((canPay&&!encaisserBusy)?"ready":"nope")+'" '+((canPay&&!encaisserBusy)?'onclick="doEncaisser()"':'disabled')+'>'+
+    (encaisserBusy?"⏳ Encaissement…":(canPay?"✓ Encaisser "+eur(tot):(staffOk?"En attente de montant…":"⚠️ Connexion staff requise")))+'</button>';
   return h;
 }
 
@@ -1101,11 +1144,16 @@ function rmPayL(i){ if(C.payLignes.length>1){ C.payLignes.splice(i,1); refreshPa
 function metEnCompte(reste){ C.payLignes.push({mode:"Compte",montant:reste.toFixed(2),note:"Mise en compte"}); refreshPayZone(); }
 
 function doEncaisser(){
+  if(isPending("encaisser")) return;
   if(!requireBackend("encaisser")) return;
   if(!C.staff){ openModal("modal-staff"); return; }
   var tot=totalPanier();
+  if(!tot||!C.panier.length){ showToast("Panier vide","#ef4444"); return; }
   var totalPaye=r2(C.payLignes.reduce(function(s,l){return s+(parseFloat(l.montant)||0);},0));
   if(totalPaye<=0){ showToast("Montant requis","#ef4444"); return; }
+
+  setPending("encaisser",true);
+  refreshPayZone();
 
   var hasEsp=C.payLignes.some(function(l){return l.mode==="Espèces";});
   var espV=parseFloat(C.especes)||0;
@@ -1117,25 +1165,29 @@ function doEncaisser(){
 
   var aMisEnCompte=paiements.some(function(p){return p.mode==="Compte";});
   var statut=totalPaye>=tot?"payée":(totalPaye>0?"partiellement payée":"envoyée");
+  var checkoutToken=(C.checkoutToken||uid("checkout"));
+  C.checkoutToken=checkoutToken;
 
-  // ID local provisoire
-  var localId=localFactureId();
   var facture={
-    id:localId, clientId:C.clientId||null,
+    id:localFactureId(), clientId:C.clientId||null,
     lignes:JSON.parse(JSON.stringify(C.panier)),
     date:today(), echeance:today(), statut:statut,
     notes:C.note, staff:C.staff, paiements:paiements,
     fromCaisse:true, renduMonnaie:renduMonnaie,
-    createdAt:now()
+    createdAt:now(), clientRequestId:checkoutToken
   };
 
-  api({action:"createFacture",facture:facture}, function(d){
+  api({action:"createFacture",facture:facture,requestId:checkoutToken}, function(d){
     if(!(d&&d.ok&&d.id)){
+      setPending("encaisser",false);
+      refreshPayZone();
       showToast("Erreur création facture: "+(d&&d.error||"inconnue"),"#ef4444");
       return;
     }
     facture.id=d.id;
-    DB.factures.push(facture);
+    var existingIdx=DB.factures.findIndex(function(x){ return x.id===facture.id; });
+    if(existingIdx>=0) DB.factures[existingIdx]=facture;
+    else DB.factures.unshift(facture);
     if(C.clientId&&aMisEnCompte&&DB.clients[C.clientId]){
       var delta=paiements.filter(function(p){return p.mode==="Compte";}).reduce(function(s,p){return s+p.montant;},0);
       DB.clients[C.clientId].solde=r2((DB.clients[C.clientId].solde||0)-delta);
@@ -1146,8 +1198,12 @@ function doEncaisser(){
     updateBadges();
     showTicket(facture);
     C.panier=[]; C.payLignes=[]; C.note=""; C.especes=""; C.editIdx=-1;
-    C.clientId=null; C.anonyme=false;
+    C.clientId=null; C.anonyme=false; C.checkoutToken=null;
+    setPending("encaisser",false);
+    syncAll();
   }, function(err){
+    setPending("encaisser",false);
+    refreshPayZone();
     showToast("Erreur backend: "+err,"#ef4444");
   });
 }
@@ -1188,7 +1244,7 @@ function showTicket(f){
   if(c.reste>0) h+='<div style="background:#fef3c7;border-radius:6px;padding:4px 8px;margin-top:5px;font-weight:800;color:#92400e;font-size:12px;">📋 En compte: '+eur(c.reste)+'</div>';
   h+='<div style="text-align:center;color:#94a3b8;font-size:10px;margin-top:8px;">Merci de votre visite !</div></div>';
   h+='<div class="ticket-actions">'
-    +'<button class="btn btn-dark btn-full" onclick="window.print()">🖨️ Imprimer</button>'
+    +'<button class="btn btn-dark btn-full" onclick="printTicket()">🖨️ Imprimer</button>'
     +'<button class="btn btn-green btn-full" onclick="closeTicket()">✚ Nouvelle vente</button>'
     +'</div>';
   document.getElementById("ticket-content").innerHTML=h;
@@ -1196,6 +1252,16 @@ function showTicket(f){
 }
 
 function closeTicket(){ document.getElementById("ticket-overlay").classList.remove("open"); renderPage(); }
+
+function printTicket(){
+  var src=document.getElementById("ticket-content");
+  if(!src){ showToast("Ticket introuvable","#ef4444"); return; }
+  var w=window.open("","_blank","width=420,height=700");
+  if(!w){ showToast("Popup bloquée: autorisez les popups pour imprimer","#ef4444"); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ticket</title><style>body{font-family:system-ui,sans-serif;padding:10px;background:#fff;} .ticket{max-width:360px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;} .ticket-top{background:linear-gradient(135deg,#059669,#10b981);padding:14px;text-align:center;color:#fff;} .ticket-body{padding:12px;font-family:monospace;font-size:12px;} .ticket-actions{display:none;} @media print{body{padding:0;} .ticket{border:none;}}</style></head><body>'+src.innerHTML+'</body></html>');
+  w.document.close();
+  setTimeout(function(){ w.print(); },350);
+}
 
 function renderHistoJour(){
   var tod=today();
@@ -1324,6 +1390,7 @@ function changeStatut(id,statut){
   api({action:"updateFacture",id:id,statut:statut},function(d){
     if(d&&d.ok){
       f.statut=statut; saveLocal(); updateBadges(); renderFactures();
+      syncAll();
       showToast("Statut mis à jour");
     } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
   },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
@@ -1364,6 +1431,7 @@ function selPayMode(btn,mode){
 }
 
 function doPayFacture(fid){
+  if(isPending("payFacture")) return;
   if(!requireBackend("enregistrer un paiement")) return;
   var montant=parseFloat(document.getElementById("pf-mnt").value)||0;
   var date=document.getElementById("pf-date").value||today();
@@ -1375,7 +1443,10 @@ function doPayFacture(fid){
   var f=DB.factures.find(function(x){return x.id===fid;});
   if(!f) return;
   var p={id:uid("pay"),date:date,heure:hhmm(),montant:montant,mode:mode,staff:staff,note:note};
-  api({action:"addPaiement",paiement:{factureId:fid,clientId:f.clientId||"",date:date,heure:p.heure,montant:montant,mode:mode,staff:staff,note:note}},
+  var paymentReqId=uid("payreq");
+  setPending("payFacture",true);
+  setBtnLoading("#modal-gen .btn-green",true,"Validation…");
+  api({action:"addPaiement",requestId:paymentReqId,paiement:{factureId:fid,clientId:f.clientId||"",date:date,heure:p.heure,montant:montant,mode:mode,staff:staff,note:note,requestId:paymentReqId}},
     function(d){
       if(d&&d.ok){
         if(!f.paiements) f.paiements=[];
@@ -1384,9 +1455,12 @@ function doPayFacture(fid){
         saveLocal(); updateBadges();
         closeModal("modal-gen");
         renderFactures();
+        syncAll();
         showToast(eur(montant)+" enregistré ✓");
       } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-    },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
+      setPending("payFacture",false);
+      setBtnLoading("#modal-gen .btn-green",false);
+    },function(err){ setPending("payFacture",false); setBtnLoading("#modal-gen .btn-green",false); showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function imprimerFacture(fid){
@@ -1453,24 +1527,30 @@ function imprimerFacture(fid){
 }
 
 function envoyerRelance(fid){
+  if(isPending("relance")) return;
   if(!BACKEND_URL){ showToast("Backend requis pour envoyer une relance","#ef4444"); return; }
   var staff=G.staff?G.staff.nom:(C.staff||"");
   if(!staff){ showToast("Connexion staff requise","#ef4444"); openModal("modal-staff"); return; }
   if(!confirm("Envoyer une relance pour la facture "+fid+" ?")) return;
+  setPending("relance",true);
   api({action:"sendRelance",factureId:fid,staff:staff},function(d){
-    if(d&&d.ok) showToast("Relance envoyée ("+d.niveau+", "+d.jours+"j)");
+    if(d&&d.ok){ showToast("Relance envoyée ("+d.niveau+", "+d.jours+"j)"); syncAll(); }
     else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-  });
+    setPending("relance",false);
+  },function(err){ setPending("relance",false); showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function creerAvoir(fid){
+  if(isPending("createAvoir")) return;
   if(!requireBackend("créer un avoir")) return;
   if(!confirm("Créer un avoir pour la facture "+fid+" ?")) return;
   var staff=G.staff?G.staff.nom:(C.staff||"");
+  setPending("createAvoir",true);
   api({action:"createAvoir",factureId:fid,staff:staff},function(d){
     if(d&&d.ok){ showToast("Avoir créé: "+d.avoirId); syncAll(); }
     else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
+    setPending("createAvoir",false);
+  },function(err){ setPending("createAvoir",false); showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function openFactureDetail(fid){ nav("factures"); setTimeout(function(){ P.selFacId=fid; renderFactures(); },100); }
@@ -1601,6 +1681,7 @@ function openNewClient(prefill){
 }
 
 function doSaveClient(existingId){
+  if(isPending("saveClient")) return;
   if(!requireBackend("enregistrer un client")) return;
   var prenom=(document.getElementById("nc-p").value||"").trim();
   var nom=(document.getElementById("nc-n").value||"").trim();
@@ -1622,6 +1703,8 @@ function doSaveClient(existingId){
   var client=Object.assign({},existing,{id:id,prenom:prenom,nom:nom,tel:tel,email:email,ville:ville,licence:licence,notes:notes,certif:certif,cgv:cgv,
     tags:existing.tags||[],solde:existing.solde||0,derniereVisite:existing.derniereVisite||today(),createdAt:existing.createdAt||now()});
 
+  setPending("saveClient",true);
+  setBtnLoading("#modal-edit-client .btn-green",true,"Enregistrement…");
   api({action:"upsertClient",client:client},function(d){
     if(d&&d.ok&&d.client){
       DB.clients[d.client.id]=d.client;
@@ -1631,10 +1714,15 @@ function doSaveClient(existingId){
       showToast(existingId?"Client mis à jour ✓":"Client créé ✓");
       if(G.page==="clients") renderClients();
       if(G.page==="caisse") renderCaisse();
+      syncAll();
     } else {
       showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
     }
+    setPending("saveClient",false);
+    setBtnLoading("#modal-edit-client .btn-green",false);
   },function(err){
+    setPending("saveClient",false);
+    setBtnLoading("#modal-edit-client .btn-green",false);
     showToast("Erreur backend: "+err,"#ef4444");
   });
 }
@@ -1858,6 +1946,7 @@ function openEditProd(id){
 }
 
 function doSaveProd(id){
+  if(isPending("saveProduit")) return;
   if(!requireBackend("enregistrer un produit")) return;
   var nom=(document.getElementById("pp-nom").value||"").trim();
   var emoji=document.getElementById("pp-emoji").value||"📦";
@@ -1868,6 +1957,8 @@ function doSaveProd(id){
   if(!nom||!prix){ showToast("Nom et prix requis","#ef4444"); return; }
   var pid=id||uid("prod");
   var prod={id:pid,nom:nom,emoji:emoji,cat:cat,prix:prix,tva:tva,couleur:couleur};
+  setPending("saveProduit",true);
+  setBtnLoading("#modal-produit .btn-green",true,"Enregistrement…");
   api({action:"upsertProduit",produit:prod},function(d){
     if(d&&d.ok){
       var idx=DB.produits.findIndex(function(p){return p.id===pid;});
@@ -1876,8 +1967,11 @@ function doSaveProd(id){
       closeModal("modal-produit");
       renderProduits();
       showToast(id?"Produit mis à jour ✓":"Produit créé ✓");
+      syncAll();
     } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
+    setPending("saveProduit",false);
+    setBtnLoading("#modal-produit .btn-green",false);
+  },function(err){ setPending("saveProduit",false); setBtnLoading("#modal-produit .btn-green",false); showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function doDeleteProd(id){
