@@ -76,6 +76,41 @@ function uid(p) { return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9
 function num(v) { var n=parseFloat(String(v||0).replace(",",".")); return isFinite(n)?n:0; }
 function bool(v){ return v===true||v==="OUI"||v==="true"; }
 
+function lockScript(){
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  return lock;
+}
+function normalizeReqId(requestId){
+  return String(requestId||"").trim();
+}
+function requestLogSheet(){
+  var wb=ss();
+  var s=wb.getSheetByName("RequestLog");
+  if(!s){
+    s=wb.insertSheet("RequestLog");
+    s.appendRow(["requestId","action","resourceId","createdAt"]);
+  }
+  return s;
+}
+function findRequestLog(requestId){
+  var rid=normalizeReqId(requestId);
+  if(!rid) return null;
+  var s=requestLogSheet();
+  var data=s.getDataRange().getValues();
+  for(var i=1;i<data.length;i++){
+    if(String(data[i][0]||"")===rid){
+      return {row:i+1, requestId:rid, action:String(data[i][1]||""), resourceId:String(data[i][2]||""), createdAt:data[i][3]};
+    }
+  }
+  return null;
+}
+function saveRequestLog(requestId, action, resourceId){
+  var rid=normalizeReqId(requestId);
+  if(!rid) return;
+  requestLogSheet().appendRow([rid, action||"", resourceId||"", now()]);
+}
+
 // ================================================================
 // STAFF
 // ================================================================
@@ -285,21 +320,35 @@ function genFactureId(){
 }
 function createFacture(body){
   var f=body.facture; if(!f) return json({ok:false,error:"Données manquantes"});
-  var id=genFactureId(); var ts=now();
-  sh("Factures").appendRow([id,f.clientId||"",f.date||today(),f.echeance||f.date||today(),
-    f.statut||"envoyée",f.notes||"",f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
-  (f.lignes||[]).forEach(function(l){
-    sh("Lignes").appendRow([uid("lig"),id,l.desc||"",l.emoji||"",num(l.qte)||1,
-      num(l.pu),num(l.prixSaisi||l.pu),num(l.remisePct||0),num(l.remiseEur||0),num(l.tva)||20,l.produitId||""]);
-  });
-  (f.paiements||[]).forEach(function(p){
-    sh("Paiements").appendRow([uid("pay"),id,f.clientId||"",p.date||today(),p.heure||heure(),
-      num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
-  });
-  if(f.clientId) updateClientVisite(f.clientId);
-  if(f.clientId) updateClientSoldeCompte(f.clientId, f.paiements||[]);
-  return json({ok:true,id:id});
+  var requestId = normalizeReqId((body&&body.requestId) || (f&&f.clientRequestId));
+  var lock=lockScript();
+  try {
+    if(requestId){
+      var existingReq=findRequestLog(requestId);
+      if(existingReq&&existingReq.resourceId){
+        return json({ok:true,id:existingReq.resourceId,duplicate:true});
+      }
+    }
+    var id=genFactureId(); var ts=now();
+    sh("Factures").appendRow([id,f.clientId||"",f.date||today(),f.echeance||f.date||today(),
+      f.statut||"envoyée",f.notes||"",f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
+    (f.lignes||[]).forEach(function(l){
+      sh("Lignes").appendRow([uid("lig"),id,l.desc||"",l.emoji||"",num(l.qte)||1,
+        num(l.pu),num(l.prixSaisi||l.pu),num(l.remisePct||0),num(l.remiseEur||0),num(l.tva)||20,l.produitId||""]);
+    });
+    (f.paiements||[]).forEach(function(p){
+      sh("Paiements").appendRow([uid("pay"),id,f.clientId||"",p.date||today(),p.heure||heure(),
+        num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
+    });
+    if(f.clientId) updateClientVisite(f.clientId);
+    if(f.clientId) updateClientSoldeCompte(f.clientId, f.paiements||[]);
+    if(requestId) saveRequestLog(requestId,"createFacture",id);
+    return json({ok:true,id:id});
+  } finally {
+    lock.releaseLock();
+  }
 }
+
 function updateFacture(body){
   if(!body.id) return json({ok:false,error:"ID requis"});
   var s=sh("Factures"); var data=s.getDataRange().getValues(); var ts=now();
@@ -316,19 +365,34 @@ function updateFacture(body){
 }
 function addPaiement(body){
   var p=body.paiement; if(!p||!p.factureId) return json({ok:false,error:"Données manquantes"});
-  var ts=now();
-  sh("Paiements").appendRow([uid("pay"),p.factureId,p.clientId||"",p.date||today(),p.heure||heure(),
-    num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
-  if(p.mode==="Compte"&&p.clientId) {
-    var sc=sh("Clients"); var dc=sc.getDataRange().getValues();
-    for(var i=1;i<dc.length;i++){
-      if(dc[i][0]===p.clientId){ sc.getRange(i+1,7).setValue(num(dc[i][6])-num(p.montant)); break; }
+  var requestId = normalizeReqId((body&&body.requestId) || (p&&p.requestId));
+  var lock=lockScript();
+  try {
+    if(requestId){
+      var existingReq=findRequestLog(requestId);
+      if(existingReq){
+        var st=existingReq.resourceId?recalcStatut(existingReq.resourceId):recalcStatut(p.factureId);
+        return json({ok:true,statut:st,duplicate:true});
+      }
     }
+    var ts=now();
+    sh("Paiements").appendRow([uid("pay"),p.factureId,p.clientId||"",p.date||today(),p.heure||heure(),
+      num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
+    if(p.mode==="Compte"&&p.clientId) {
+      var sc=sh("Clients"); var dc=sc.getDataRange().getValues();
+      for(var i=1;i<dc.length;i++){
+        if(dc[i][0]===p.clientId){ sc.getRange(i+1,7).setValue(num(dc[i][6])-num(p.montant)); break; }
+      }
+    }
+    var newStatut=recalcStatut(p.factureId);
+    updateFacture({id:p.factureId,statut:newStatut});
+    if(requestId) saveRequestLog(requestId,"addPaiement",p.factureId);
+    return json({ok:true,statut:newStatut});
+  } finally {
+    lock.releaseLock();
   }
-  var newStatut=recalcStatut(p.factureId);
-  updateFacture({id:p.factureId,statut:newStatut});
-  return json({ok:true,statut:newStatut});
 }
+
 function recalcStatut(factureId){
   var lData=sh("Lignes").getDataRange().getValues();
   var pData=sh("Paiements").getDataRange().getValues();
