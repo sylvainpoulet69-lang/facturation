@@ -147,6 +147,30 @@ function allocationAvoir(montantAvoir, resteFacture){
   var applique=round2(Math.min(montant,reste));
   return {montant:montant,applique:applique,surplus:round2(montant-applique)};
 }
+function isFactureEnCompte(factureRow){
+  if(!factureRow) return false;
+  return /\[EN_COMPTE\]/i.test(String(factureRow[5]||""));
+}
+function addFactureNote(baseNotes, noteToAppend){
+  var base=String(baseNotes||"").trim();
+  var add=String(noteToAppend||"").trim();
+  if(!add) return base;
+  return base ? (base+"\n"+add) : add;
+}
+function findAvoirByOperationId(operationId){
+  var op=String(operationId||"").trim();
+  if(!op) return null;
+  var pData=sh("Paiements").getDataRange().getValues();
+  for(var i=1;i<pData.length;i++){
+    var mode=String(pData[i][6]||"").trim();
+    var note=String(pData[i][8]||"");
+    if(mode==="Avoir" && note.indexOf("op="+op)!==-1){
+      var m=note.match(/Avoir\s+([^\s]+)/i);
+      return {avoirId:m?m[1]:"", factureId:String(pData[i][1]||""), row:pData[i]};
+    }
+  }
+  return null;
+}
 function clientExists(clientId){
   if(!clientId) return false;
   var cData=sh("Clients").getDataRange().getValues();
@@ -421,8 +445,9 @@ function createFacture(body){
       }
     }
     var id=genFactureId(); var ts=now();
+    var factureNotes=f.notes||"";
     sh("Factures").appendRow([id,f.clientId||"",f.date||today(),f.echeance||f.date||today(),
-      f.statut||"impayée",f.notes||"",f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
+      f.statut||"impayée",factureNotes,f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
     (f.lignes||[]).forEach(function(l){
       sh("Lignes").appendRow([uid("lig"),id,l.desc||"",l.emoji||"",num(l.qte)||1,
         num(l.pu),num(l.prixSaisi||l.pu),num(l.remisePct||0),num(l.remiseEur||0),parsePercent(l.tva,20),l.produitId||""]);
@@ -472,6 +497,8 @@ function createFacture(body){
             break;
           }
         }
+        factureNotes=addFactureNote(factureNotes,"[EN_COMPTE] dette initiale="+dette.toFixed(2));
+        updateFacture({id:id,notes:factureNotes});
       }
     }
     if(f.clientId) updateClientVisite(f.clientId);
@@ -525,6 +552,9 @@ function addPaiement(body){
     }
     sh("Paiements").appendRow([uid("pay"),p.factureId,p.clientId||"",p.date||today(),p.heure||heure(),
       montant,mode,p.staff||"",p.note||"",ts]);
+    if(isFactureEnCompte(facture.row) && p.clientId && montant>0 && mode!=="Solde"){
+      updateClientSoldeByDelta(p.clientId,montant,ts);
+    }
     if(mode==="Solde" && p.clientId && montant>0) updateClientSoldeByDelta(p.clientId,-montant,ts);
     var newStatut=recalcStatut(p.factureId);
     updateFacture({id:p.factureId,statut:newStatut});
@@ -551,8 +581,15 @@ function createAvoir(body){
   if(!factureId) return json({ok:false,error:"factureId requis"});
   if(!(montantAvoir>0)) return json({ok:false,error:"Montant d'avoir invalide"});
   var requestId = normalizeReqId(body&&body.requestId);
+  var operationId = normalizeReqId(body&&body.operationId) || requestId;
   var lock=lockScript();
   try {
+    if(operationId){
+      var existingOp=findAvoirByOperationId(operationId);
+      if(existingOp){
+        return json({ok:true,avoirId:existingOp.avoirId,duplicate:true});
+      }
+    }
     if(requestId){
       var existingReq=findRequestLog(requestId);
       if(existingReq&&existingReq.resourceId){
@@ -576,21 +613,25 @@ function createAvoir(body){
   if(!(alloc.applique>0)) return json({ok:false,error:"Aucun montant à appliquer sur la facture"});
 
   var avoirId=genFactureId(); var ts=now();
-  var noteAvoir="Avoir de "+factureId+" | montant="+alloc.montant.toFixed(2)+" | appliqué="+alloc.applique.toFixed(2)+" | surplus="+alloc.surplus.toFixed(2);
+  var noteAvoir="Avoir de "+factureId+" | montant="+alloc.montant.toFixed(2)+" | appliqué="+alloc.applique.toFixed(2)+" | surplus="+alloc.surplus.toFixed(2)+(operationId?" | op="+operationId:"");
   if(notes) noteAvoir+=" | note="+notes;
   sh("Factures").appendRow([avoirId,origF[1],today(),today(),"avoir",noteAvoir,staffN,ts,ts,"NON"]);
   sh("Lignes").appendRow([uid("lig"),avoirId,"Avoir lié à "+factureId,"📋",1,-alloc.montant,-alloc.montant,0,0,0,""]);
 
-  var notePaiement="Avoir "+avoirId+" appliqué à la facture"+(notes?" — "+notes:"");
+  var notePaiement="Avoir "+avoirId+" appliqué à la facture"+(notes?" — "+notes:"")+(operationId?" | op="+operationId:"");
   sh("Paiements").appendRow([uid("pay"),factureId,origF[1]||"",today(),heure(),alloc.applique,"Avoir",staffN,notePaiement,ts]);
   var newStatut=recalcStatut(factureId);
-  var newNotes=(origF[5]?String(origF[5])+"\n":"")+"Avoir appliqué: "+avoirId+" ("+alloc.applique.toFixed(2)+"€"+(alloc.surplus>0?", surplus crédité: "+alloc.surplus.toFixed(2)+"€":"")+")";
+  var newNotes=addFactureNote(origF[5],"Avoir appliqué: "+avoirId+" ("+alloc.applique.toFixed(2)+"€"+(alloc.surplus>0?", surplus crédité: "+alloc.surplus.toFixed(2)+"€":"")+")"+(operationId?" [op="+operationId+"]":""));
   updateFacture({id:factureId,statut:newStatut,notes:newNotes});
+
+  if(isFactureEnCompte(origF) && origF[1] && alloc.applique>0){
+    updateClientSoldeByDelta(origF[1],alloc.applique,ts);
+  }
 
   var newSolde=null;
   if(alloc.surplus>0 && origF[1]){
     newSolde=updateClientSoldeByDelta(origF[1],alloc.surplus,ts);
-    sh("Paiements").appendRow([uid("pay"),"CREDIT",origF[1],today(),heure(),alloc.surplus,"Avoir",staffN,"Surplus avoir "+avoirId+" (facture "+factureId+")",ts]);
+    sh("Paiements").appendRow([uid("pay"),"CREDIT",origF[1],today(),heure(),alloc.surplus,"Avoir",staffN,"Surplus avoir "+avoirId+" (facture "+factureId+")"+(operationId?" | op="+operationId:""),ts]);
   }
 
   if(requestId) saveRequestLog(requestId,"createAvoir",avoirId);

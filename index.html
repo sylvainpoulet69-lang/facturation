@@ -488,7 +488,8 @@ var UI = {
     updateFacture: false
   },
   apiInFlight: 0,
-  confirmAction: null
+  confirmAction: null,
+  avoirOps: {}
 };
 
 // État pages
@@ -1630,6 +1631,7 @@ function creerAvoir(fid){
   if(isAvoirDocument(f)){ showToast("Impossible de créer un avoir depuis un avoir","#ef4444"); return; }
   var c=calcF(f);
   if(c.reste<=0){ showToast("Facture déjà soldée","#ef4444"); return; }
+  UI.avoirOps[fid]=UI.avoirOps[fid]||uid("avoirop");
   var staffOpts=staffNames().map(function(s){return '<option value="'+esc(s)+'"'+(G.staff&&G.staff.nom===s?" selected":"")+'>'+esc(s)+'</option>';}).join("");
   set("modal-gen-title","📋 Créer un avoir — "+fid);
   set("modal-gen-body",
@@ -1656,19 +1658,22 @@ function doCreateAvoir(fid){
   if(!staff){ showToast("Staff requis","#ef4444"); return; }
   setPending("createAvoir",true);
   var reqId=uid("avoir");
+  var operationId=UI.avoirOps[fid]||uid("avoirop");
+  UI.avoirOps[fid]=operationId;
   function onResp(d){
     if(d&&d.ok){
       closeModal("modal-gen");
       var msg="Avoir "+d.avoirId+" créé · appliqué "+eur(d.applique||0);
       if((d.surplus||0)>0) msg+=" · crédit client "+eur(d.surplus);
       showToast(msg);
+      delete UI.avoirOps[fid];
       syncAll();
     } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
     setPending("createAvoir",false);
   }
-  api({action:"createAvoir",factureId:fid,montant:montant,notes:notes,staff:staff,requestId:reqId},onResp,function(err){
+  api({action:"createAvoir",factureId:fid,montant:montant,notes:notes,staff:staff,requestId:reqId,operationId:operationId},onResp,function(err){
     if(/Action inconnue/i.test(String(err||""))){
-      api({action:"createCreditNote",factureId:fid,montant:montant,notes:notes,staff:staff,requestId:reqId},onResp,function(err2){
+      api({action:"createCreditNote",factureId:fid,montant:montant,notes:notes,staff:staff,requestId:reqId,operationId:operationId},onResp,function(err2){
         setPending("createAvoir",false);
         showToast("Erreur backend: "+err2,"#ef4444");
       });
