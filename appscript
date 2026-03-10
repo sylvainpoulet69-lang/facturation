@@ -78,9 +78,34 @@ function uid(p) { return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9
 function num(v) { var n=parseFloat(String(v||0).replace(",",".")); return isFinite(n)?n:0; }
 function bool(v){ return v===true||v==="OUI"||v==="true"; }
 function parsePercent(v, fallback){
-  if(v===null||v===undefined||String(v).trim()==="") return fallback;
-  var n=parseFloat(String(v).replace(",","."));
-  return isFinite(n)?n:fallback;
+  if(v===null||v===undefined) return fallback;
+  var raw=String(v).trim();
+  if(raw==="") return fallback;
+  var n=parseFloat(raw.replace(",","."));
+  if(!isFinite(n)) return fallback;
+  return n;
+}
+
+function findFactureRow(factureId){
+  if(!factureId) return null;
+  var fData=sh("Factures").getDataRange().getValues();
+  for(var i=1;i<fData.length;i++){
+    if(String(fData[i][0]||"").trim()===String(factureId).trim()) return {rowIndex:i+1,row:fData[i]};
+  }
+  return null;
+}
+function clientExists(clientId){
+  if(!clientId) return false;
+  var cData=sh("Clients").getDataRange().getValues();
+  for(var i=1;i<cData.length;i++){
+    if(String(cData[i][0]||"").trim()===String(clientId).trim()) return true;
+  }
+  return false;
+}
+function isProduitActif(v){
+  if(v===false) return false;
+  var raw=String(v===undefined||v===null?"":v).trim().toUpperCase();
+  return raw!=="NON" && raw!=="FALSE" && raw!=="0";
 }
 
 function lockScript(){
@@ -259,7 +284,7 @@ function creditSolde(body) {
 function listProduits(){
   var data=sh("Produits").getDataRange().getValues(); var res=[];
   for(var i=1;i<data.length;i++){
-    var r=data[i]; if(!r[0]||r[7]==="NON"||r[7]===false) continue;
+    var r=data[i]; if(!r[0]||!isProduitActif(r[7])) continue;
     res.push({id:r[0],nom:r[1],emoji:r[2]||"📦",cat:r[3]||"autre",prix:num(r[4]),tva:parsePercent(r[5],20),couleur:r[6]||"#3b82f6"});
   }
   return json({ok:true,produits:res});
@@ -276,9 +301,10 @@ function upsertProduit(p){
 }
 function deleteProduit(id){
   if(!id) return json({ok:false,error:"ID requis"});
+  var targetId=String(id).trim();
   var s=sh("Produits"); var data=s.getDataRange().getValues();
   for(var i=1;i<data.length;i++){
-    if(data[i][0]===id){ s.getRange(i+1,8).setValue("NON"); return json({ok:true}); }
+    if(String(data[i][0]||"").trim()===targetId){ s.getRange(i+1,8).setValue("NON"); return json({ok:true}); }
   }
   return json({ok:false,error:"Produit non trouvé"});
 }
@@ -410,6 +436,11 @@ function updateFacture(body){
 }
 function addPaiement(body){
   var p=body.paiement; if(!p||!p.factureId) return json({ok:false,error:"Données manquantes"});
+  var facture=findFactureRow(p.factureId);
+  if(!facture) return json({ok:false,error:"Facture non trouvée"});
+  var factureClientId=String(facture.row[1]||"").trim();
+  if(!p.clientId && factureClientId) p.clientId=factureClientId;
+  if(p.clientId && !clientExists(p.clientId)) return json({ok:false,error:"Client non trouvé"});
   var requestId = normalizeReqId((body&&body.requestId) || (p&&p.requestId));
   var lock=lockScript();
   try {
@@ -460,14 +491,20 @@ function createAvoir(body){
   var origF=null;
   for(var i=1;i<fData.length;i++){ if(fData[i][0]===factureId){origF=fData[i];break;} }
   if(!origF) return json({ok:false,error:"Facture non trouvée"});
+  var lignesOrig=[];
+  for(var j=1;j<lData.length;j++){
+    if(lData[j][1]===factureId) lignesOrig.push(lData[j]);
+  }
+  if(!lignesOrig.length) return json({ok:false,error:"Aucune ligne à avoirer pour cette facture"});
   var avoirId=genFactureId(); var ts=now();
   sh("Factures").appendRow([avoirId,origF[1],today(),today(),"avoir","Avoir de "+factureId+" — "+notes,staffN,ts,ts,"NON"]);
-  for(var j=1;j<lData.length;j++){
-    var l=lData[j]; if(l[1]!==factureId) continue;
+  for(var li=0;li<lignesOrig.length;li++){
+    var l=lignesOrig[li];
     sh("Lignes").appendRow([uid("lig"),avoirId,l[2],l[3],num(l[4]),-Math.abs(num(l[5])),-Math.abs(num(l[6])),0,0,num(l[9]),l[10]]);
   }
-  updateFacture({id:factureId,statut:"avoir",notes:"Avoir créé: "+avoirId});
-  return json({ok:true,avoirId:avoirId});
+  var newNotes=(origF[5]?String(origF[5])+"\n":"")+"Avoir créé: "+avoirId;
+  updateFacture({id:factureId,statut:"avoir",notes:newNotes});
+  return json({ok:true,avoirId:avoirId,lignesCopiees:lignesOrig.length});
 }
 
 // ================================================================
