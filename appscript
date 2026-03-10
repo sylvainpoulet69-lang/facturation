@@ -72,8 +72,8 @@ function json(obj, code) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 function now()  { return new Date().toISOString(); }
-function today(){ return new Date().toISOString().slice(0,10); }
-function heure(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+function today(){ return Utilities.formatDate(new Date(), "Europe/Paris", "yyyy-MM-dd"); }
+function heure(){ return Utilities.formatDate(new Date(), "Europe/Paris", "HH:mm"); }
 function uid(p) { return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9999); }
 function num(v) { var n=parseFloat(String(v||0).replace(",",".")); return isFinite(n)?n:0; }
 function round2(v){ return Math.round(num(v)*100)/100; }
@@ -85,6 +85,20 @@ function parsePercent(v, fallback){
   var n=parseFloat(raw.replace(",","."));
   if(!isFinite(n)) return fallback;
   return n;
+}
+function toBusinessDate(v){
+  if(v===null||v===undefined||v==="") return "";
+  if(Object.prototype.toString.call(v)==='[object Date]' && !isNaN(v.getTime())){
+    return Utilities.formatDate(v,"Europe/Paris","yyyy-MM-dd");
+  }
+  var raw=String(v).trim();
+  var isoDay=raw.match(/^(\d{4}-\d{2}-\d{2})$/);
+  if(isoDay) return isoDay[1];
+  var isoTs=raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+  if(isoTs) return isoTs[1];
+  var frDay=raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(frDay) return frDay[3]+"-"+frDay[2]+"-"+frDay[1];
+  return "";
 }
 
 function findFactureRow(factureId){
@@ -410,13 +424,13 @@ function listFactures(body){
     var pfid=pData[j][1]; if(!pfid) continue;
     if(!pMap[pfid]) pMap[pfid]=[];
     pMap[pfid].push({id:pData[j][0],factureId:pfid,clientId:pData[j][2],
-      date:pData[j][3],heure:pData[j][4],montant:num(pData[j][5]),
+      date:toBusinessDate(pData[j][3]),heure:pData[j][4],montant:num(pData[j][5]),
       mode:pData[j][6],staff:pData[j][7],note:pData[j][8],createdAt:pData[j][9]});
   }
   var res=[];
   for(var k=1;k<fData.length;k++){
     var r=fData[k]; if(!r[0]) continue;
-    var f={id:r[0],clientId:r[1],date:r[2],echeance:r[3],statut:r[4],notes:r[5],staff:r[6],
+    var f={id:r[0],clientId:r[1],date:toBusinessDate(r[2])||r[2],echeance:toBusinessDate(r[3])||r[3],statut:r[4],notes:r[5],staff:r[6],
       createdAt:r[7],updatedAt:r[8],fromCaisse:bool(r[9]),
       lignes:lMap[r[0]]||[],paiements:pMap[r[0]]||[]};
     if(body&&body.clientId&&f.clientId!==body.clientId) continue;
@@ -723,7 +737,7 @@ function getStats(){
   var pData=sh("Paiements").getDataRange().getValues();
   var caJour=0,caMois=0,caTotal=0;
   for(var i=1;i<pData.length;i++){
-    var m=num(pData[i][5]); var d=String(pData[i][3]||"").slice(0,10);
+    var m=num(pData[i][5]); var d=toBusinessDate(pData[i][3]);
     caTotal+=m; if(d===tod)caJour+=m; if(d.slice(0,7)===mois)caMois+=m;
   }
   var fData=sh("Factures").getDataRange().getValues();

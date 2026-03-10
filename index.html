@@ -666,7 +666,30 @@ function setEl(id, txt, show){
 // ================================================================
 function r2(n){ return Math.round(n*100)/100; }
 function eur(n){ return r2(n).toFixed(2).replace(".",",")+"€"; }
-function today(){ return new Date().toISOString().slice(0,10); }
+function ymdInParis(d){
+  if(!(d instanceof Date) || isNaN(d.getTime())) return "";
+  var parts=FR_DATE_YMD_FMT.formatToParts(d), out={year:"",month:"",day:""};
+  parts.forEach(function(p){
+    if(p.type==="year"||p.type==="month"||p.type==="day") out[p.type]=p.value;
+  });
+  return out.year&&out.month&&out.day ? (out.year+"-"+out.month+"-"+out.day) : "";
+}
+function normalizeBusinessDate(v){
+  if(v===null||v===undefined) return "";
+  if(v instanceof Date) return ymdInParis(v);
+  var raw=String(v).trim();
+  if(!raw) return "";
+  var isoDay=raw.match(/^(\d{4}-\d{2}-\d{2})$/);
+  if(isoDay) return isoDay[1];
+  var isoTs=raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+  if(isoTs) return isoTs[1];
+  var frDay=raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(frDay) return frDay[3]+"-"+frDay[2]+"-"+frDay[1];
+  var parsed=new Date(raw);
+  if(!isNaN(parsed.getTime())) return ymdInParis(parsed);
+  return "";
+}
+function today(){ return ymdInParis(new Date()); }
 function now(){ return new Date().toISOString(); }
 function hhmm(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
 function uid(p){ return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9999); }
@@ -680,6 +703,7 @@ function asPct(v, def){
 function hasRelanceNote(f){ return /Relance /i.test(String((f&&f.notes)||"")); }
 var FR_DATE_FMT = new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",day:"2-digit",month:"2-digit",year:"numeric"});
 var FR_DATE_TIME_FMT = new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+var FR_DATE_YMD_FMT = new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"});
 var PARIS_TIME_PARTS_FMT = new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});
 
 function parisTimeParts(d){
@@ -2175,8 +2199,11 @@ function renderDashboard(){
   var caJour=0,caMois=0,caTotal=0;
   DB.factures.forEach(function(f){
     (f.paiements||[]).forEach(function(p){
-      var d=String(p.date||"").slice(0,10);
-      caTotal+=p.montant; if(d===tod)caJour+=p.montant; if(d.slice(0,7)===mois)caMois+=p.montant;
+      var d=normalizeBusinessDate(p&&p.date);
+      var montant=+p.montant||0;
+      caTotal+=montant;
+      if(d===tod) caJour+=montant;
+      if(d.slice(0,7)===mois) caMois+=montant;
     });
   });
   var nbRetard=DB.factures.filter(function(f){return displayStatutFacture(f)==="impayée";}).length;
