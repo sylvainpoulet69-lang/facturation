@@ -637,7 +637,7 @@ function renderPage(){
 }
 
 function updateBadges(){
-  var retard = DB.factures.filter(function(f){return f.statut==="en retard";}).length;
+  var retard = DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
   var relances = DB.factures.filter(function(f){
     return normaliseStatutFacture(f)!=="payée";
   }).length;
@@ -666,6 +666,11 @@ function now(){ return new Date().toISOString(); }
 function hhmm(){ var d=new Date(); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
 function uid(p){ return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9999); }
 function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function asPct(v, def){
+  if(v===null||v===undefined||String(v).trim()==="") return def;
+  var n=parseFloat(String(v).replace(",","."));
+  return Number.isFinite(n)?n:def;
+}
 
 function hasRelanceNote(f){ return /Relance /i.test(String((f&&f.notes)||"")); }
 function frDate(v, withTime){
@@ -677,14 +682,16 @@ function frDate(v, withTime){
   }
   if(isNaN(d.getTime())) return esc(String(v));
   var opts={timeZone:"Europe/Paris",day:"2-digit",month:"2-digit",year:"numeric"};
-  if(withTime) Object.assign(opts,{hour:"2-digit",minute:"2-digit"});
+  var hasRealTime = String(v).includes("T") || /\b\d{2}:\d{2}\b/.test(String(v));
+  if(withTime && hasRealTime){
+    var hh=d.getHours(), mm=d.getMinutes(), ss=d.getSeconds();
+    if(!(hh===0 && mm===0 && ss===0)) Object.assign(opts,{hour:"2-digit",minute:"2-digit"});
+  }
   return d.toLocaleString("fr-FR",opts).replace(","," à");
 }
 function normaliseStatutFacture(f){
-  var c=calcF(f), hasCompte=f&&f.statut==="en compte";
+  var c=calcF(f);
   if(c.reste<=0) return "payée";
-  if(hasRelanceNote(f)||f.statut==="relancée") return "relancée";
-  if(hasCompte) return "en compte";
   if(c.paye>0) return "partiellement payée";
   return "impayée";
 }
@@ -694,7 +701,8 @@ function calcLigne(l){
   var remP=base*(l.remisePct||0)/100;
   var remE=(l.remiseEur||0)*l.qte;
   var ht=r2(base-remP-remE);
-  var tva=r2(ht*(l.tva||20)/100);
+  var tvaPct=asPct(l.tva,20);
+  var tva=r2(ht*tvaPct/100);
   return {ht:ht, tva:tva, ttc:r2(ht+tva)};
 }
 
@@ -713,7 +721,7 @@ function joursRetard(echeance){
 
 function bdgHTML(s){
   var m={
-    "payée":"bdg-payee","envoyée":"bdg-envoyee","impayée":"bdg-envoyee","en compte":"bdg-partiel","relancée":"bdg-retard","en retard":"bdg-retard",
+    "payée":"bdg-payee","envoyée":"bdg-envoyee","impayée":"bdg-envoyee",
     "partiellement payée":"bdg-partiel","avoir":"bdg-avoir","annulée":"bdg-annulee","brouillon":"bdg-brouillon"
   };
   return '<span class="bdg '+(m[s]||"bdg-brouillon")+'"><span class="dot"></span>'+esc(s)+'</span>';
@@ -1002,7 +1010,7 @@ function addProd(id){
   if(!p) return;
   var idx=C.panier.findIndex(function(l){return l.produitId===p.id;});
   if(idx>=0) C.panier[idx].qte++;
-  else C.panier.push({produitId:p.id,desc:p.nom,emoji:p.emoji,couleur:p.couleur,qte:1,pu:p.prix,prixSaisi:p.prix,remisePct:0,remiseEur:0,tva:p.tva||20});
+  else C.panier.push({produitId:p.id,desc:p.nom,emoji:p.emoji,couleur:p.couleur,qte:1,pu:p.prix,prixSaisi:p.prix,remisePct:0,remiseEur:0,tva:asPct(p.tva,20)});
   syncPayLignes();
   renderCaisse();
 }
@@ -1022,7 +1030,7 @@ function openArticleLibre(){
 function doAddLibre(){
   var d=(document.getElementById("al-d").value||"").trim();
   var p=parseFloat(document.getElementById("al-p").value)||0;
-  var t=parseFloat(document.getElementById("al-t").value)||20;
+  var t=asPct(document.getElementById("al-t").value,20);
   var q=parseInt(document.getElementById("al-q").value)||1;
   if(!d||!p){ showToast("Libellé et prix requis","#ef4444"); return; }
   C.panier.push({produitId:"libre_"+Date.now(),desc:d,emoji:"✏️",couleur:"#6366f1",qte:q,pu:p,prixSaisi:p,remisePct:0,remiseEur:0,tva:t});
@@ -1104,11 +1112,13 @@ function renderPayZone(){
   var totalPaye=r2(C.payLignes.reduce(function(s,l){return s+(parseFloat(l.montant)||0);},0));
   var reste=r2(tot-totalPaye);
   var hasEsp=C.payLignes.some(function(l){return l.mode==="Espèces";});
+  var hasModeCompte=C.payLignes.some(function(l){return l.mode==="En compte";});
   var espV=parseFloat(C.especes)||0;
   var rendu=hasEsp&&C.especes?r2(espV-tot):null;
   var staffOk=C.staff!=="";
-  var isOnAccount=tot>0&&totalPaye<=0;
-  var canPay=staffOk&&(totalPaye>0||isOnAccount);
+  var isOnAccount=tot>0&&(hasModeCompte||totalPaye<=0);
+  var hasClient=!!C.clientId;
+  var canPay=staffOk&&hasClient&&(totalPaye>0||isOnAccount);
 
   var staffList=BACKEND_URL&&G.staff?[G.staff.nom]:["Jason","Marie","Lucas","Amina","Théo"];
 
@@ -1121,8 +1131,8 @@ function renderPayZone(){
   C.payLignes.forEach(function(l,i){
     h+='<div class="pay-ligne-row">'
       +'<select class="pay-mode-sel" onchange="updPayL('+i+',\'mode\',this.value)">'
-      +["CB","Espèces","Virement","Chèque","Solde"].map(function(m){
-        var icons={CB:"💳",Espèces:"💵",Virement:"🏦",Chèque:"📝",Solde:"👤"};
+      +["CB","Espèces","Virement","Chèque","Solde","En compte"].map(function(m){
+        var icons={CB:"💳",Espèces:"💵",Virement:"🏦",Chèque:"📝",Solde:"👤","En compte":"📋"};
         return '<option value="'+m+'"'+(l.mode===m?" selected":"")+'>'+(icons[m]||"")+' '+m+'</option>';
       }).join("")
       +'</select>'
@@ -1151,7 +1161,7 @@ function renderPayZone(){
   var encaisserBusy=isPending("encaisser");
   h+='<textarea class="note-sale" rows="1" placeholder="📝 Note sur la vente…" onchange="C.note=this.value">'+esc(C.note)+'</textarea>';
   h+='<button class="btn-encaisser '+((canPay&&!encaisserBusy)?"ready":"nope")+'" '+((canPay&&!encaisserBusy)?'onclick="doEncaisser()"':'disabled')+'>'+
-    (encaisserBusy?"⏳ Encaissement…":(canPay?(isOnAccount?"✓ Valider vente en compte":"✓ Encaisser "+eur(tot)):(staffOk?"En attente de montant…":"⚠️ Connexion staff requise")))+'</button>';
+    (encaisserBusy?"⏳ Encaissement…":(canPay?(isOnAccount?"✓ Valider vente en compte":"✓ Encaisser "+eur(tot)):(!staffOk?"⚠️ Connexion staff requise":"⚠️ Sélectionner un client")))+'</button>';
   return h;
 }
 
@@ -1167,9 +1177,11 @@ function doEncaisser(){
   if(!C.staff){ openModal("modal-staff"); return; }
   var tot=totalPanier();
   if(!tot||!C.panier.length){ showToast("Panier vide","#ef4444"); return; }
+  var hasModeCompte=C.payLignes.some(function(l){return l.mode==="En compte";});
   var totalPaye=r2(C.payLignes.reduce(function(s,l){return s+(parseFloat(l.montant)||0);},0));
-  var isOnAccount=totalPaye<=0;
-  if(isOnAccount && !C.clientId){ showToast("Client obligatoire pour une vente en compte","#ef4444"); return; }
+  var isOnAccount=hasModeCompte||totalPaye<=0;
+  if(hasModeCompte) totalPaye=0;
+  if(!C.clientId){ showToast("Client obligatoire pour encaisser la vente","#ef4444"); return; }
 
   setPending("encaisser",true);
   refreshPayZone();
@@ -1178,11 +1190,11 @@ function doEncaisser(){
   var espV=parseFloat(C.especes)||0;
   var renduMonnaie=hasEsp&&C.especes?Math.max(0,r2(espV-tot)):0;
 
-  var paiements=isOnAccount?[]:C.payLignes.map(function(l){
+  var paiements=isOnAccount?[]:C.payLignes.filter(function(l){ return l.mode!=="En compte"; }).map(function(l){
     return {date:today(),heure:hhmm(),montant:r2(parseFloat(l.montant)||0),mode:l.mode,staff:C.staff,note:l.note||""};
   });
 
-  var statut=isOnAccount?"en compte":(totalPaye>=tot?"payée":"partiellement payée");
+  var statut=isOnAccount?"impayée":(totalPaye>=tot?"payée":"partiellement payée");
   var checkoutToken=(C.checkoutToken||uid("checkout"));
   C.checkoutToken=checkoutToken;
 
@@ -1191,7 +1203,7 @@ function doEncaisser(){
     lignes:JSON.parse(JSON.stringify(C.panier)),
     date:today(), echeance:today(), statut:statut,
     notes:C.note, staff:C.staff, paiements:paiements,
-    fromCaisse:true, renduMonnaie:renduMonnaie,
+    fromCaisse:true, saleMode:isOnAccount?"en_compte":"standard", renduMonnaie:renduMonnaie,
     createdAt:now(), clientRequestId:checkoutToken
   };
 
@@ -1237,7 +1249,7 @@ function showTicket(f){
   var h='<div class="ticket-top"><div class="t-ico">✅</div><div class="t-title">Vente encaissée !</div><div class="t-amt">'+eur(c.ttc)+'</div></div>';
   h+='<div class="ticket-body">';
   h+='<div class="t-row"><span class="t-key">Ticket n°</span><span class="t-val">'+esc(f.id)+'</span></div>';
-  h+='<div class="t-row"><span class="t-key">Date</span><span class="t-val">'+frDate((f.date||'')+'T'+((f.paiements[0]&&f.paiements[0].heure)||'00:00'),true)+'</span></div>';
+  h+='<div class="t-row"><span class="t-key">Date</span><span class="t-val">'+frDate(f.date,false)+'</span></div>';
   if(cli) h+='<div class="t-row"><span class="t-key">Client</span><span class="t-val">'+esc(cli.prenom)+' '+esc(cli.nom)+'</span></div>';
   h+='<div class="t-row"><span class="t-key">Staff</span><span class="t-val">'+esc(f.staff)+'</span></div>';
   h+='<hr class="t-sep"/>';
@@ -1296,7 +1308,7 @@ function renderHistoJour(){
 // FACTURES
 // ================================================================
 function renderFactures(){
-  var statuts=["tous","en compte","impayée","partiellement payée","payée","relancée","en retard","avoir","annulée","brouillon"];
+  var statuts=["tous","impayée","partiellement payée","payée","avoir","annulée","brouillon"];
   var list=DB.factures.filter(function(f){
     var statutAff=normaliseStatutFacture(f);
     var cl=f.clientId?DB.clients[f.clientId]:null;
@@ -1359,7 +1371,7 @@ function renderFactureDetail(f){
   h+='<div class="fdp-head"><div><div class="fdp-id">'+esc(f.id)+'</div><div class="fdp-cli">'+(cl?esc(cl.prenom)+" "+esc(cl.nom)+" · "+esc(cl.email||""):"Client non défini")+'</div></div>';
   h+='<div style="display:flex;gap:8px;align-items:center;">'+bdgHTML(statutAff);
   h+='<select onchange="changeStatut(\''+f.id+'\',this.value)" style="border:1.5px solid var(--line);border-radius:8px;padding:5px;font-size:12px;font-family:inherit;">';
-  ["brouillon","en compte","impayée","partiellement payée","payée","relancée","en retard","avoir","annulée"].forEach(function(s){
+  ["brouillon","impayée","partiellement payée","payée","avoir","annulée"].forEach(function(s){
     h+='<option value="'+s+'"'+(f.statut===s?" selected":"")+'>'+s+'</option>';
   });
   h+='</select></div></div>';
@@ -1385,7 +1397,7 @@ function renderFactureDetail(f){
   if((f.paiements||[]).length){
     h+='<div style="margin-bottom:12px;"><div class="lbl" style="margin-bottom:6px;">Paiements</div>';
     (f.paiements||[]).forEach(function(p){
-      h+='<div class="pay-item"><span class="pay-item-left">✅ '+frDate((p.date||'')+'T'+(p.heure||'00:00'),true)+" · "+esc(p.mode)+" · "+esc(p.staff)+(p.note?" · "+esc(p.note):"")+'</span><span class="pay-item-right">+'+eur(p.montant)+'</span></div>';
+      h+='<div class="pay-item"><span class="pay-item-left">✅ '+frDate((p.date||'')+(p.heure?('T'+p.heure):''),true)+" · "+esc(p.mode)+" · "+esc(p.staff)+(p.note?" · "+esc(p.note):"")+'</span><span class="pay-item-right">+'+eur(p.montant)+'</span></div>';
     });
     h+='</div>';
   }
@@ -1505,8 +1517,9 @@ function imprimerFacture(fid){
   }).join("");
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Facture '+f.id+'</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}body{padding:20mm;color:#0f172a;font-size:12px;}'
-    +'@page{size:A4;margin:15mm;}@media print{body{padding:0;}}'
-    +'</style></head><body>'
+    +'@page{size:A4;margin:15mm;}@media print{body{padding:0;} .no-print{display:none!important;}}'
+    +"</style></head><body>"
+    +'<div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:12px;"><button onclick="window.print()" style="background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;">🖨️ Imprimer</button></div>'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #e2e8f0;">'
     +'<div><h1 style="font-size:22px;font-weight:900;color:#1d4ed8;margin-bottom:4px;">🎾 '+cfg.nom+'</h1>'
     +'<div style="font-size:11px;color:#64748b;">'+cfg.adresse+'<br>'+cfg.tel+' · '+cfg.email+'<br>SIRET: '+cfg.siret+'</div></div>'
@@ -1539,7 +1552,6 @@ function imprimerFacture(fid){
     +'<span>IBAN: '+cfg.iban+'</span><span>TVA: '+cfg.tva+'</span></div>'
     +'</body></html>');
   w.document.close();
-  setTimeout(function(){ w.print(); },600);
 }
 
 function envoyerRelance(fid){
@@ -1908,7 +1920,6 @@ function imprimerReleve(clientId){
     +'<div style="margin-top:16px;padding-top:10px;border-top:1px dashed #e2e8f0;color:#64748b;font-size:10px;">Relevé généré automatiquement par FacturePro — '+cfg.nom+'</div>'
     +'</body></html>');
   w.document.close();
-  setTimeout(function(){ w.print(); },600);
 }
 
 // ================================================================
@@ -1979,7 +1990,7 @@ function doSaveProd(id){
   var emoji=document.getElementById("pp-emoji").value||"📦";
   var cat=document.getElementById("pp-cat").value||"autre";
   var prix=parseFloat(document.getElementById("pp-prix").value)||0;
-  var tva=parseFloat(document.getElementById("pp-tva").value)||20;
+  var tva=asPct(document.getElementById("pp-tva").value,20);
   var couleur=document.getElementById("pp-couleur").value||"#3b82f6";
   if(!nom||!prix){ showToast("Nom et prix requis","#ef4444"); return; }
   var pid=id||uid("prod");
@@ -2006,13 +2017,20 @@ function doDeleteProd(id){
   var p=DB.produits.find(function(x){return x.id===id;});
   if(!p) return;
   if(!confirm("Supprimer: "+p.nom+" ?")) return;
-  api({action:"deleteProduit",id:id},function(d){
+  function onDeleteResp(d){
     if(d&&d.ok){
       DB.produits=DB.produits.filter(function(x){return x.id!==id;});
       saveLocal();
       renderProduits();
       showToast("Produit supprimé");
     } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+  }
+  api({action:"deleteProduit",id:id},function(d){
+    if(d&&d.ok===false&&/Action inconnue/i.test(String(d.error||""))){
+      api({action:"deleteProduct",id:id},onDeleteResp,function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
+      return;
+    }
+    onDeleteResp(d);
   },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
@@ -2028,7 +2046,7 @@ function renderDashboard(){
       caTotal+=p.montant; if(d===tod)caJour+=p.montant; if(d.slice(0,7)===mois)caMois+=p.montant;
     });
   });
-  var nbRetard=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="relancée"||f.statut==="en retard";}).length;
+  var nbRetard=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
   var impaye=r2(DB.factures.reduce(function(s,f){
     if(calcF(f).reste>0 && !["avoir","annulée"].includes(f.statut)) return s+calcF(f).reste;
     return s;
@@ -2046,7 +2064,7 @@ function renderDashboard(){
   var sTot=DB.factures.length;
   var sPaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="payée";}).length;
   var sUnpaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)!=="payée" && !["avoir","annulée"].includes(f.statut);}).length;
-  var sRel=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="relancée";}).length;
+  var sRel=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
   var sAvoir=DB.factures.filter(function(f){return f.statut==="avoir";}).length;
   h+='<div style="display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:12px;align-items:start;">';
   h+='<div class="tbl-card"><div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">'
