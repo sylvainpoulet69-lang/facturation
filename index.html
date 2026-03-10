@@ -699,9 +699,22 @@ function normaliseStatutFacture(f){
   if(c.paye>0) return "partiellement payée";
   return "impayée";
 }
+function isAvoirDocument(f){
+  if(!f) return false;
+  var brut=String((f.statut)||"").trim().toLowerCase();
+  if(brut!=="avoir") return false;
+  var total=calcF(f).ttc;
+  if(total<0) return true;
+  return /^Avoir de\s+/i.test(String(f.notes||""));
+}
+function linkedFactureFromAvoir(f){
+  var m=String((f&&f.notes)||"").match(/Avoir de\s+([^|\n]+)/i);
+  return m?String(m[1]||"").trim():"";
+}
 function displayStatutFacture(f){
   var brut=String((f&&f.statut)||"").trim().toLowerCase();
-  if(["avoir","annulée","brouillon"].indexOf(brut)!==-1) return brut;
+  if(isAvoirDocument(f)) return "avoir";
+  if(["annulée","brouillon"].indexOf(brut)!==-1) return brut;
   return normaliseStatutFacture(f);
 }
 function staffNames(){
@@ -1347,7 +1360,7 @@ function renderHistoJour(){
 function renderFactures(){
   var statuts=["tous","impayée","partiellement payée","payée","avoir","annulée","brouillon"];
   var list=DB.factures.filter(function(f){
-    var statutAff=normaliseStatutFacture(f);
+    var statutAff=displayStatutFacture(f);
     var cl=f.clientId?DB.clients[f.clientId]:null;
     var matchQ=!P.facQ||
       ((cl?(cl.prenom+" "+cl.nom):"").toLowerCase().includes(P.facQ.toLowerCase()))||
@@ -1360,7 +1373,7 @@ function renderFactures(){
   h+='<div class="search-bar"><span class="search-icon">🔍</span><input class="inp" placeholder="Client, numéro…" value="'+esc(P.facQ)+'" oninput="P.facQ=this.value;P.selFacId=null;renderFactures()"/></div>';
   h+='<div class="filters-bar">';
   statuts.forEach(function(s){
-    var nb=s==="tous"?DB.factures.length:DB.factures.filter(function(f){return normaliseStatutFacture(f)===s;}).length;
+    var nb=s==="tous"?DB.factures.length:DB.factures.filter(function(f){return displayStatutFacture(f)===s;}).length;
     h+='<button class="flt-btn'+(P.facFlt===s?" active":"")+'" onclick="P.facFlt=\''+s+'\';P.selFacId=null;renderFactures()">'+(s==="tous"?"Toutes ("+DB.factures.length+")":s+" ("+nb+")")+'</button>';
   });
   h+='</div>';
@@ -1371,7 +1384,7 @@ function renderFactures(){
   if(!list.length) h+='<tr><td colspan="9" style="text-align:center;padding:22px;color:#94a3b8;">Aucune facture</td></tr>';
   list.forEach(function(f){
     var c=calcF(f); var cl=f.clientId?DB.clients[f.clientId]:null;
-    var statutAff=normaliseStatutFacture(f);
+    var statutAff=displayStatutFacture(f);
     var retard=joursRetard(f.echeance);
     var isSel=P.selFacId===f.id;
     h+='<tr class="'+(isSel?"sel":"")+'" onclick="P.selFacId=\''+f.id+'\';renderFactures()" id="frow-'+f.id+'">';
@@ -1403,7 +1416,7 @@ function renderFactureDetail(f){
   var c=calcF(f);
   var cl=f.clientId?DB.clients[f.clientId]:null;
   var retard=joursRetard(f.echeance);
-  var statutAff=normaliseStatutFacture(f);
+  var statutAff=displayStatutFacture(f);
   var h='<div class="fac-detail-panel">';
   h+='<div class="fdp-head"><div><div class="fdp-id">'+esc(f.id)+'</div><div class="fdp-cli">'+(cl?esc(cl.prenom)+" "+esc(cl.nom)+" · "+esc(cl.email||""):"Client non défini")+'</div></div>';
   h+='<div style="display:flex;gap:8px;align-items:center;">'+bdgHTML(statutAff)+'</div></div>';
@@ -1433,12 +1446,16 @@ function renderFactureDetail(f){
     });
     h+='</div>';
   }
+  if(isAvoirDocument(f)){
+    var linked=linkedFactureFromAvoir(f);
+    h+='<div style="background:#f5f3ff;border-radius:7px;padding:8px 11px;font-size:12px;color:#5b21b6;margin-bottom:10px;">📎 Avoir lié à la facture '+(linked?'<b>'+esc(linked)+'</b>':'d\'origine')+'</div>';
+  }
   if(f.notes) h+='<div style="background:#fffbeb;border-radius:7px;padding:8px 11px;font-size:12px;color:#92400e;margin-bottom:12px;">📝 '+esc(f.notes)+'</div>';
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
   if(c.reste>0) h+='<button class="btn btn-green btn-sm" onclick="openPayFacture(\''+f.id+'\')">💳 Enregistrer paiement</button>';
   h+='<button class="btn btn-sm" style="background:#f1f5f9;color:#0f172a;" onclick="imprimerFacture(\''+f.id+'\')">🖨️ Imprimer / PDF</button>';
   if(c.reste>0&&cl&&cl.email) h+='<button class="btn btn-sm btn-warn" onclick="envoyerRelance(\''+f.id+'\')">🔔 Relancer</button>';
-  h+='<button class="btn btn-sm btn-purple" onclick="creerAvoir(\''+f.id+'\')">📋 Créer avoir</button>';
+  if(c.reste>0&&!isAvoirDocument(f)) h+='<button class="btn btn-sm btn-purple" onclick="creerAvoir(\''+f.id+'\')">📋 Créer avoir</button>'; 
   h+='</div></div>';
   return h;
 }
@@ -1498,7 +1515,7 @@ function doPayFacture(fid){
       if(d&&d.ok){
         if(!f.paiements) f.paiements=[];
         f.paiements.push(p);
-        f.statut=d.statut || normaliseStatutFacture(f);
+        f.statut=d.statut || displayStatutFacture(f);
         saveLocal(); updateBadges();
         closeModal("modal-gen");
         renderFactures();
@@ -1594,22 +1611,50 @@ function envoyerRelance(fid){
 function creerAvoir(fid){
   if(isPending("createAvoir")) return;
   if(!requireBackend("créer un avoir")) return;
-  var staff=G.staff?G.staff.nom:(C.staff||"");
-  if(!staff){ showToast("Connexion staff requise","#ef4444"); openModal("modal-staff"); return; }
-  openConfirmModal("Créer un avoir", "Confirmer la création d'un avoir pour la facture "+fid+" ?", "Créer l'avoir", function(){ doCreateAvoir(fid, staff); });
+  var f=DB.factures.find(function(x){return x.id===fid;});
+  if(!f) return;
+  if(isAvoirDocument(f)){ showToast("Impossible de créer un avoir depuis un avoir","#ef4444"); return; }
+  var c=calcF(f);
+  if(c.reste<=0){ showToast("Facture déjà soldée","#ef4444"); return; }
+  var staffOpts=staffNames().map(function(s){return '<option value="'+esc(s)+'"'+(G.staff&&G.staff.nom===s?" selected":"")+'>'+esc(s)+'</option>';}).join("");
+  set("modal-gen-title","📋 Créer un avoir — "+fid);
+  set("modal-gen-body",
+    '<div style="background:#f8fafc;border-radius:9px;padding:11px;margin-bottom:12px;display:flex;gap:20px;">'
+      +'<div><div class="lbl">FACTURE</div><div style="font-weight:800;color:#1d4ed8;">'+esc(fid)+'</div></div>'
+      +'<div><div class="lbl">RESTE DÛ</div><div style="font-weight:900;color:#ef4444;font-size:17px;">'+eur(c.reste)+'</div></div>'
+    +'</div>'
+    +'<div class="form-row"><label class="lbl">Montant de l\'avoir (€) *</label><input class="inp" id="av-mnt" type="number" min="0.01" step="0.01" value="'+c.reste.toFixed(2)+'"/></div>'
+    +'<div class="form-row"><label class="lbl">Staff</label><select class="inp" id="av-staff"><option value="">— Choisir —</option>'+staffOpts+'</select></div>'
+    +'<div class="form-row"><label class="lbl">Note (optionnelle)</label><textarea class="inp" id="av-note" rows="2" placeholder="Motif de l\'avoir…"></textarea></div>'
+    +'<div style="display:flex;gap:8px;">'
+      +'<button class="btn btn-purple btn-full" onclick="doCreateAvoir(\''+fid+'\')">✓ Créer et appliquer</button>'
+      +'<button class="btn btn-soft" onclick="closeModal(\'modal-gen\')">Annuler</button>'
+    +'</div>'
+  );
+  openModal("modal-gen");
 }
 
-function doCreateAvoir(fid, staff){
+function doCreateAvoir(fid){
+  var montant=parseFloat((document.getElementById("av-mnt").value||"0").replace(",","."));
+  var staff=(document.getElementById("av-staff").value||"").trim() || (G.staff?G.staff.nom:"") || (C.staff||"");
+  var notes=(document.getElementById("av-note").value||"").trim();
+  if(!(montant>0)){ showToast("Montant invalide","#ef4444"); return; }
+  if(!staff){ showToast("Staff requis","#ef4444"); return; }
   setPending("createAvoir",true);
   var reqId=uid("avoir");
   function onResp(d){
-    if(d&&d.ok){ showToast(d.duplicate?"Avoir déjà créé: "+d.avoirId:"Avoir créé: "+d.avoirId); syncAll(); }
-    else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
+    if(d&&d.ok){
+      closeModal("modal-gen");
+      var msg="Avoir "+d.avoirId+" créé · appliqué "+eur(d.applique||0);
+      if((d.surplus||0)>0) msg+=" · crédit client "+eur(d.surplus);
+      showToast(msg);
+      syncAll();
+    } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
     setPending("createAvoir",false);
   }
-  api({action:"createAvoir",factureId:fid,staff:staff,requestId:reqId},onResp,function(err){
+  api({action:"createAvoir",factureId:fid,montant:montant,notes:notes,staff:staff,requestId:reqId},onResp,function(err){
     if(/Action inconnue/i.test(String(err||""))){
-      api({action:"createCreditNote",factureId:fid,staff:staff,requestId:reqId},onResp,function(err2){
+      api({action:"createCreditNote",factureId:fid,montant:montant,notes:notes,staff:staff,requestId:reqId},onResp,function(err2){
         setPending("createAvoir",false);
         showToast("Erreur backend: "+err2,"#ef4444");
       });
@@ -2081,7 +2126,7 @@ function renderDashboard(){
       caTotal+=p.montant; if(d===tod)caJour+=p.montant; if(d.slice(0,7)===mois)caMois+=p.montant;
     });
   });
-  var nbRetard=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
+  var nbRetard=DB.factures.filter(function(f){return displayStatutFacture(f)==="impayée";}).length;
   var impaye=r2(DB.factures.reduce(function(s,f){
     if(calcF(f).reste>0 && !["avoir","annulée"].includes(displayStatutFacture(f))) return s+calcF(f).reste;
     return s;
@@ -2097,9 +2142,9 @@ function renderDashboard(){
   });
   h+='</div>';
   var sTot=DB.factures.length;
-  var sPaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="payée";}).length;
-  var sUnpaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
-  var sPartial=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="partiellement payée";}).length;
+  var sPaid=DB.factures.filter(function(f){return displayStatutFacture(f)==="payée";}).length;
+  var sUnpaid=DB.factures.filter(function(f){return displayStatutFacture(f)==="impayée";}).length;
+  var sPartial=DB.factures.filter(function(f){return displayStatutFacture(f)==="partiellement payée";}).length;
   var sAvoir=DB.factures.filter(function(f){return displayStatutFacture(f)==="avoir";}).length;
   var sAnnulee=DB.factures.filter(function(f){return displayStatutFacture(f)==="annulée";}).length;
   h+='<div style="display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:12px;align-items:start;">';
@@ -2118,7 +2163,7 @@ function renderDashboard(){
     h+='<td style="font-weight:600;">'+(cl?esc(cl.prenom)+" "+esc(cl.nom):"<span style='color:#94a3b8'>Client non défini</span>")+'</td>';
     h+='<td style="color:#64748b;font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(f.lignes&&f.lignes.length?esc(f.lignes[0].desc):"—")+'</td>';
     h+='<td style="font-weight:700;">'+eur(c.ttc)+'</td>';
-    h+='<td>'+bdgHTML(normaliseStatutFacture(f))+'</td>';
+    h+='<td>'+bdgHTML(displayStatutFacture(f))+'</td>';
     h+='<td style="font-size:12px;color:#64748b;">'+frDate(f.date,false)+'</td>';
     h+='</tr>';
   });
