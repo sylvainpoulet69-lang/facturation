@@ -192,11 +192,18 @@ function upsertClient(c) {
   var s=sh("Clients"); var data=s.getDataRange().getValues(); var ts=now();
   var telNorm=String(c.tel||"").replace(/\s+/g,"").trim();
   var emailNorm=String(c.email||"").trim().toLowerCase();
+  var prenomNorm=String(c.prenom||"").trim().toLowerCase();
+  var nomNorm=String(c.nom||"").trim().toLowerCase();
   for(var i=1;i<data.length;i++){
     var rowId=String(data[i][0]||"").trim();
     var rowTel=String(data[i][3]||"").replace(/\s+/g,"").trim();
     var rowEmail=String(data[i][4]||"").trim().toLowerCase();
+    var rowPrenom=String(data[i][1]||"").trim().toLowerCase();
+    var rowNom=String(data[i][2]||"").trim().toLowerCase();
     var isOther = !c.id || rowId !== c.id;
+    if (isOther && telNorm && rowTel === telNorm && prenomNorm===rowPrenom && nomNorm===rowNom) {
+      return json({ok:false,error:"Ce client existe déjà dans la base."});
+    }
     if (isOther && telNorm && rowTel === telNorm) {
       return json({ok:false,error:"Téléphone déjà utilisé par "+data[i][1]+" "+data[i][2]});
     }
@@ -331,7 +338,7 @@ function createFacture(body){
     }
     var id=genFactureId(); var ts=now();
     sh("Factures").appendRow([id,f.clientId||"",f.date||today(),f.echeance||f.date||today(),
-      f.statut||"envoyée",f.notes||"",f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
+      f.statut||"impayée",f.notes||"",f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
     (f.lignes||[]).forEach(function(l){
       sh("Lignes").appendRow([uid("lig"),id,l.desc||"",l.emoji||"",num(l.qte)||1,
         num(l.pu),num(l.prixSaisi||l.pu),num(l.remisePct||0),num(l.remiseEur||0),num(l.tva)||20,l.produitId||""]);
@@ -341,7 +348,6 @@ function createFacture(body){
         num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
     });
     if(f.clientId) updateClientVisite(f.clientId);
-    if(f.clientId) updateClientSoldeCompte(f.clientId, f.paiements||[]);
     if(requestId) saveRequestLog(requestId,"createFacture",id);
     return json({ok:true,id:id});
   } finally {
@@ -378,12 +384,6 @@ function addPaiement(body){
     var ts=now();
     sh("Paiements").appendRow([uid("pay"),p.factureId,p.clientId||"",p.date||today(),p.heure||heure(),
       num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
-    if(p.mode==="Compte"&&p.clientId) {
-      var sc=sh("Clients"); var dc=sc.getDataRange().getValues();
-      for(var i=1;i<dc.length;i++){
-        if(dc[i][0]===p.clientId){ sc.getRange(i+1,7).setValue(num(dc[i][6])-num(p.montant)); break; }
-      }
-    }
     var newStatut=recalcStatut(p.factureId);
     updateFacture({id:p.factureId,statut:newStatut});
     if(requestId) saveRequestLog(requestId,"addPaiement",p.factureId);
@@ -411,12 +411,7 @@ function recalcStatut(factureId){
   var reste=Math.round((total-paye)*100)/100;
   if(reste<=0) return "payée";
   if(paye>0)   return "partiellement payée";
-  for(var k=1;k<fData.length;k++){
-    if(fData[k][0]===factureId){
-      var ech=fData[k][3]; if(ech&&new Date(ech)<new Date()) return "en retard"; break;
-    }
-  }
-  return "envoyée";
+  return "impayée";
 }
 function createAvoir(body){
   var factureId=body.factureId; var staffN=body.staff||""; var notes=body.notes||"Avoir";
@@ -441,6 +436,7 @@ function createAvoir(body){
 // ================================================================
 function sendRelance(body){
   var factureId=body.factureId; var staffN=body.staff||"";
+  var relanceType=String(body.relanceType||"").trim().toLowerCase();
   if(!factureId) return json({ok:false,error:"factureId requis"});
   // Chercher facture + client
   var fData=sh("Factures").getDataRange().getValues();
@@ -469,7 +465,7 @@ function sendRelance(body){
   var echeance=origF[3]; var jours=0;
   if(echeance){ jours=Math.max(0,Math.floor((new Date()-new Date(echeance))/86400000)); }
   // Niveau relance
-  var niveau=jours<8?"rappel":jours<16?"relance":jours<31?"ferme":"litige";
+  var niveau=relanceType|| (jours<8?"rappel":jours<16?"relance":jours<31?"ferme":"litige");
   var niveauTxt=jours<8?"Rappel de paiement":jours<16?"Relance":jours<31?"Relance ferme":"Mise en demeure";
   var cfg={}; try{ var cfgData=sh("Config").getDataRange().getValues(); for(var ci=1;ci<cfgData.length;ci++){ if(cfgData[ci][0]) cfg[cfgData[ci][0]]=cfgData[ci][1]; } }catch(e){}
   var nomClub=cfg.nom||"Tennis & Padel Club Nice";
@@ -489,8 +485,7 @@ function sendRelance(body){
   var notes=origF[5]||"";
   notes+=(notes?"\n":"")+"Relance "+niveauTxt+" envoyée le "+today()+" par "+staffN;
   updateFacture({id:factureId,notes:notes});
-  // Mettre à jour statut si en retard
-  if(origF[4]==="envoyée"&&jours>0) updateFacture({id:factureId,statut:"en retard"});
+  updateFacture({id:factureId,statut:"relancée"});
   return json({ok:true,niveau:niveau,jours:jours,emailEnvoye:emailClient});
 }
 
