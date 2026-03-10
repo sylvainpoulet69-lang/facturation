@@ -694,7 +694,10 @@ function paiementDateHeure(p){
   if(!p) return "—";
   var datePart=String(p.date||"").trim();
   var heurePart=String(p.heure||"").trim();
-  return frDate(datePart+(heurePart?("T"+heurePart):""), !!heurePart);
+  var hasInlineTime = /T\d{2}:\d{2}/.test(datePart) || /\b\d{2}:\d{2}\b/.test(datePart);
+  var isoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(datePart);
+  var raw = (heurePart && isoDateOnly) ? (datePart+"T"+heurePart) : datePart;
+  return frDate(raw, !!heurePart || hasInlineTime);
 }
 
 function frDate(v, withTime){
@@ -702,15 +705,22 @@ function frDate(v, withTime){
   var raw=String(v||"").trim();
   if(!raw) return "—";
   var dateOnlyMatch=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  var d=dateOnlyMatch
-    ? new Date(Number(dateOnlyMatch[1]),Number(dateOnlyMatch[2])-1,Number(dateOnlyMatch[3]))
-    : ((v instanceof Date)?v:new Date(raw));
+  if(dateOnlyMatch){
+    return dateOnlyMatch[3]+"/"+dateOnlyMatch[2]+"/"+dateOnlyMatch[1];
+  }
+  var localDateTimeMatch=raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2})?$/);
+  if(localDateTimeMatch){
+    var dmy=localDateTimeMatch[3]+"/"+localDateTimeMatch[2]+"/"+localDateTimeMatch[1];
+    if(withTime) return dmy+" à "+localDateTimeMatch[4]+":"+localDateTimeMatch[5];
+    return dmy;
+  }
+  var d=(v instanceof Date)?v:new Date(raw);
   if(isNaN(d.getTime())){
     var m=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if(m) d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
   }
   if(isNaN(d.getTime())) return esc(raw);
-  var hasRealTime = !dateOnlyMatch && (raw.includes("T") || /\b\d{2}:\d{2}\b/.test(raw));
+  var hasRealTime = raw.includes("T") || /\b\d{2}:\d{2}\b/.test(raw);
   if(withTime && hasRealTime){
     var paris=parisTimeParts(d);
     if(!(paris.hour==="00" && paris.minute==="00")) return FR_DATE_TIME_FMT.format(d).replace(","," à");
