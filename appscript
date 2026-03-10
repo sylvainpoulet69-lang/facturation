@@ -486,11 +486,25 @@ function recalcStatut(factureId){
 function createAvoir(body){
   var factureId=body.factureId; var staffN=body.staff||""; var notes=body.notes||"Avoir";
   if(!factureId) return json({ok:false,error:"factureId requis"});
+  var requestId = normalizeReqId(body&&body.requestId);
+  var lock=lockScript();
+  try {
+    if(requestId){
+      var existingReq=findRequestLog(requestId);
+      if(existingReq&&existingReq.resourceId){
+        return json({ok:true,avoirId:existingReq.resourceId,duplicate:true});
+      }
+    }
   var fData=sh("Factures").getDataRange().getValues();
   var lData=sh("Lignes").getDataRange().getValues();
   var origF=null;
   for(var i=1;i<fData.length;i++){ if(fData[i][0]===factureId){origF=fData[i];break;} }
   if(!origF) return json({ok:false,error:"Facture non trouvée"});
+  for(var ai=1;ai<fData.length;ai++){
+    if(String(fData[ai][4]||"")==="avoir" && String(fData[ai][5]||"").indexOf("Avoir de "+factureId)===0){
+      return json({ok:true,avoirId:fData[ai][0],duplicate:true});
+    }
+  }
   var lignesOrig=[];
   for(var j=1;j<lData.length;j++){
     if(lData[j][1]===factureId) lignesOrig.push(lData[j]);
@@ -504,7 +518,11 @@ function createAvoir(body){
   }
   var newNotes=(origF[5]?String(origF[5])+"\n":"")+"Avoir créé: "+avoirId;
   updateFacture({id:factureId,statut:"avoir",notes:newNotes});
+  if(requestId) saveRequestLog(requestId,"createAvoir",avoirId);
   return json({ok:true,avoirId:avoirId,lignesCopiees:lignesOrig.length});
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ================================================================
