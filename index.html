@@ -39,7 +39,6 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 #topbar{background:#fff;border-bottom:1px solid var(--line);padding:9px 22px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50;gap:12px;}
 #topbar-title{font-size:13px;font-weight:700;color:#0f172a;}
 .topbar-right{display:flex;align-items:center;gap:9px;}
-#alert-bar{background:#fef2f2;border-bottom:2px solid #fecaca;color:#991b1b;font-size:12px;font-weight:700;padding:6px 22px;cursor:pointer;display:none;text-align:center;}
 #content{flex:1;padding:20px 22px;overflow-y:auto;}
 
 /* BACKEND WARNING */
@@ -97,6 +96,7 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 .bdg{display:inline-flex;align-items:center;gap:3px;border-radius:20px;padding:3px 9px;font-size:11px;font-weight:700;white-space:nowrap;}
 .bdg .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
 .bdg-payee{background:#d1fae5;color:#065f46;}.bdg-payee .dot{background:#10b981;}
+.bdg-impayee{background:#fef3c7;color:#92400e;}.bdg-impayee .dot{background:#f59e0b;}
 .bdg-envoyee{background:#dbeafe;color:#1e40af;}.bdg-envoyee .dot{background:#3b82f6;}
 .bdg-retard{background:#fee2e2;color:#991b1b;}.bdg-retard .dot{background:#ef4444;}
 .bdg-partiel{background:#fef3c7;color:#92400e;}.bdg-partiel .dot{background:#f59e0b;}
@@ -319,7 +319,7 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 
 /* PRINT */
 @media print{
-  #sidebar,#topbar,#alert-bar,#ticket-overlay,.modal-bg,#toast,#backend-warning,.page-actions{display:none!important;}
+  #sidebar,#topbar,#ticket-overlay,.modal-bg,#toast,#backend-warning,.page-actions{display:none!important;}
   #main{margin-left:0!important;}
   body{background:#fff!important;}
   .print-area{display:block!important;}
@@ -372,7 +372,6 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 
 <!-- MAIN -->
 <div id="main">
-  <div id="alert-bar" onclick="nav('relances')">⚠️ <span id="alert-text"></span></div>
   <div id="topbar">
     <span id="topbar-title">🛒 Caisse</span>
     <div class="topbar-right">
@@ -643,10 +642,6 @@ function updateBadges(){
   }).length;
   setEl("bdg-retard", retard, retard>0);
   setEl("bdg-relance", relances, relances>0);
-  var ab=document.getElementById("alert-bar");
-  var at=document.getElementById("alert-text");
-  if(retard>0){ if(ab){ab.style.display="block";} if(at) at.textContent=retard+" facture(s) en retard — cliquer pour voir"; }
-  else if(ab) ab.style.display="none";
 }
 
 function setEl(id, txt, show){
@@ -721,7 +716,7 @@ function joursRetard(echeance){
 
 function bdgHTML(s){
   var m={
-    "payée":"bdg-payee","envoyée":"bdg-envoyee","impayée":"bdg-envoyee",
+    "payée":"bdg-payee","envoyée":"bdg-envoyee","impayée":"bdg-impayee",
     "partiellement payée":"bdg-partiel","avoir":"bdg-avoir","annulée":"bdg-annulee","brouillon":"bdg-brouillon"
   };
   return '<span class="bdg '+(m[s]||"bdg-brouillon")+'"><span class="dot"></span>'+esc(s)+'</span>';
@@ -1369,12 +1364,7 @@ function renderFactureDetail(f){
   var statutAff=normaliseStatutFacture(f);
   var h='<div class="fac-detail-panel">';
   h+='<div class="fdp-head"><div><div class="fdp-id">'+esc(f.id)+'</div><div class="fdp-cli">'+(cl?esc(cl.prenom)+" "+esc(cl.nom)+" · "+esc(cl.email||""):"Client non défini")+'</div></div>';
-  h+='<div style="display:flex;gap:8px;align-items:center;">'+bdgHTML(statutAff);
-  h+='<select onchange="changeStatut(\''+f.id+'\',this.value)" style="border:1.5px solid var(--line);border-radius:8px;padding:5px;font-size:12px;font-family:inherit;">';
-  ["brouillon","impayée","partiellement payée","payée","avoir","annulée"].forEach(function(s){
-    h+='<option value="'+s+'"'+(f.statut===s?" selected":"")+'>'+s+'</option>';
-  });
-  h+='</select></div></div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;">'+bdgHTML(statutAff)+'</div></div>';
   h+='<div class="fdp-stats">';
   [[eur(c.ttc),"TTC","#0f172a"],[eur(c.paye),"Payé","#10b981"],[eur(c.reste),"Reste","#ef4444"],[(retard>0?retard+"j":"0j"),"Retard","#f59e0b"]].forEach(function(x){
     h+='<div class="fdp-stat"><div class="fdp-sv" style="color:'+x[2]+';">'+x[0]+'</div><div class="fdp-sk">'+x[1]+'</div></div>';
@@ -1409,19 +1399,6 @@ function renderFactureDetail(f){
   h+='<button class="btn btn-sm btn-purple" onclick="creerAvoir(\''+f.id+'\')">📋 Créer avoir</button>';
   h+='</div></div>';
   return h;
-}
-
-function changeStatut(id,statut){
-  if(!requireBackend("mettre à jour le statut")) return;
-  var f=DB.factures.find(function(x){return x.id===id;});
-  if(!f) return;
-  api({action:"updateFacture",id:id,statut:statut},function(d){
-    if(d&&d.ok){
-      f.statut=statut; saveLocal(); updateBadges(); renderFactures();
-      syncAll();
-      showToast("Statut mis à jour");
-    } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
 
 function openPayFacture(fid){
@@ -1578,11 +1555,22 @@ function creerAvoir(fid){
   if(!confirm("Créer un avoir pour la facture "+fid+" ?")) return;
   var staff=G.staff?G.staff.nom:(C.staff||"");
   setPending("createAvoir",true);
-  api({action:"createAvoir",factureId:fid,staff:staff},function(d){
+  function onResp(d){
     if(d&&d.ok){ showToast("Avoir créé: "+d.avoirId); syncAll(); }
     else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
     setPending("createAvoir",false);
-  },function(err){ setPending("createAvoir",false); showToast("Erreur backend: "+err,"#ef4444"); });
+  }
+  api({action:"createAvoir",factureId:fid,staff:staff},onResp,function(err){
+    if(/Action inconnue/i.test(String(err||""))){
+      api({action:"createCreditNote",factureId:fid,staff:staff},onResp,function(err2){
+        setPending("createAvoir",false);
+        showToast("Erreur backend: "+err2,"#ef4444");
+      });
+      return;
+    }
+    setPending("createAvoir",false);
+    showToast("Erreur backend: "+err,"#ef4444");
+  });
 }
 
 function openFactureDetail(fid){ nav("factures"); setTimeout(function(){ P.selFacId=fid; renderFactures(); },100); }
@@ -1974,7 +1962,7 @@ function openEditProd(id){
     +'<div class="form-row"><label class="lbl">Emoji</label><input class="inp" id="pp-emoji" value="'+esc(p?p.emoji:"📦")+'" style="font-size:20px;text-align:center;"/></div>'
     +'<div class="form-row"><label class="lbl">Catégorie</label><select class="inp" id="pp-cat">'+catsOpts+'</select></div>'
     +'<div class="form-row"><label class="lbl">Prix TTC (€) *</label><input class="inp" id="pp-prix" type="number" step="0.01" min="0" value="'+esc(p?p.prix:0)+'"/></div>'
-    +'<div class="form-row"><label class="lbl">TVA (%)</label><input class="inp" id="pp-tva" type="number" min="0" value="'+esc(p?p.tva:20)+'"/></div>'
+    +'<div class="form-row"><label class="lbl">TVA (%)</label><input class="inp" id="pp-tva" type="number" min="0" value="'+esc((p&&p.tva!==undefined&&p.tva!==null)?p.tva:20)+'"/></div>'
     +'</div>'
     +'<div class="form-row"><label class="lbl">Couleur</label><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">'+colorBtns+'</div><input type="hidden" id="pp-couleur" value="'+esc(p?p.couleur:"#3b82f6")+'"/></div>'
     +'<div style="display:flex;gap:8px;margin-top:4px;">'
@@ -2025,13 +2013,13 @@ function doDeleteProd(id){
       showToast("Produit supprimé");
     } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
   }
-  api({action:"deleteProduit",id:id},function(d){
-    if(d&&d.ok===false&&/Action inconnue/i.test(String(d.error||""))){
-      api({action:"deleteProduct",id:id},onDeleteResp,function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
+  api({action:"deleteProduit",id:id},onDeleteResp,function(err){
+    if(/Action inconnue/i.test(String(err||""))){
+      api({action:"deleteProduct",id:id},onDeleteResp,function(err2){ showToast("Erreur backend: "+err2,"#ef4444"); });
       return;
     }
-    onDeleteResp(d);
-  },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
+    showToast("Erreur backend: "+err,"#ef4444");
+  });
 }
 
 // ================================================================
@@ -2056,16 +2044,17 @@ function renderDashboard(){
     +'<button class="btn btn-green" onclick="nav(\'caisse\')">Caisse →</button></div>';
   h+='<div class="kpi-grid">';
   [[eur(r2(caJour)),"CA Aujourd'hui","💰","#10b981"],[eur(r2(caMois)),"CA ce mois","📅","#3b82f6"],
-   [nbRetard+"","Relancées","⚠️","#ef4444"],[eur(impaye),"Impayés","🔴","#f59e0b"],
+   [nbRetard+"","Impayées","⚠️","#f59e0b"],[eur(impaye),"Montant impayé","🔴","#ef4444"],
    [Object.keys(DB.clients).length+"","Clients","👥","#8b5cf6"]].forEach(function(x){
     h+='<div class="kpi" style="border-left-color:'+x[3]+';"><div class="kpi-ico">'+x[2]+'</div><div class="kpi-val" style="color:'+x[3]+';">'+x[0]+'</div><div class="kpi-lbl">'+x[1]+'</div></div>';
   });
   h+='</div>';
   var sTot=DB.factures.length;
   var sPaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="payée";}).length;
-  var sUnpaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)!=="payée" && !["avoir","annulée"].includes(f.statut);}).length;
-  var sRel=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
+  var sUnpaid=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="impayée";}).length;
+  var sPartial=DB.factures.filter(function(f){return normaliseStatutFacture(f)==="partiellement payée";}).length;
   var sAvoir=DB.factures.filter(function(f){return f.statut==="avoir";}).length;
+  var sAnnulee=DB.factures.filter(function(f){return f.statut==="annulée";}).length;
   h+='<div style="display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:12px;align-items:start;">';
   h+='<div class="tbl-card"><div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">'
     +'<span style="font-weight:700;">Activité récente</span>'
@@ -2082,14 +2071,14 @@ function renderDashboard(){
     h+='<td style="font-weight:600;">'+(cl?esc(cl.prenom)+" "+esc(cl.nom):"<span style='color:#94a3b8'>Client non défini</span>")+'</td>';
     h+='<td style="color:#64748b;font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(f.lignes&&f.lignes.length?esc(f.lignes[0].desc):"—")+'</td>';
     h+='<td style="font-weight:700;">'+eur(c.ttc)+'</td>';
-    h+='<td>'+bdgHTML(f.statut)+'</td>';
+    h+='<td>'+bdgHTML(normaliseStatutFacture(f))+'</td>';
     h+='<td style="font-size:12px;color:#64748b;">'+frDate(f.date,false)+'</td>';
     h+='</tr>';
   });
   h+='</tbody></table></div>';
   h+='<div class="tbl-card" style="padding:10px;">'
     +'<div style="font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin:4px 6px 10px;">Statuts factures</div>'
-    +[["Total factures",sTot,"#0f172a"],["Factures payées",sPaid,"#10b981"],["Factures impayées",sUnpaid,"#ef4444"],["Factures relancées",sRel,"#f59e0b"],["Avoirs",sAvoir,"#8b5cf6"]].map(function(x){
+    +[["Total factures",sTot,"#0f172a"],["Factures payées",sPaid,"#10b981"],["Factures partiellement payées",sPartial,"#f59e0b"],["Factures impayées",sUnpaid,"#ef4444"],["Avoirs",sAvoir,"#8b5cf6"],["Factures annulées",sAnnulee,"#9d174d"]].map(function(x){
       return '<div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:10px 11px;margin-bottom:6px;"><span style="font-size:12px;color:#475569;">'+x[0]+'</span><strong style="color:'+x[2]+';">'+x[1]+'</strong></div>';
     }).join('')
     +'</div></div>';

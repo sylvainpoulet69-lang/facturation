@@ -41,6 +41,7 @@ function doPost(e) {
       case "updateFacture":   return updateFacture(body);
       case "addPaiement":     return addPaiement(body);
       case "createAvoir":     return createAvoir(body);
+      case "createCreditNote": return createAvoir(body); // compat éventuelle front
       case "creditSolde":     return creditSolde(body);
       case "sendRelance":     return sendRelance(body);
       case "sendEmail":       return sendEmail(body);
