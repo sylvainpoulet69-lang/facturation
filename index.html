@@ -772,6 +772,12 @@ function avInit(c){
   if(!c) return "?";
   return ((c.prenom||"")[0]||"").toUpperCase()+(((c.nom||"")[0])||"").toUpperCase();
 }
+function soldeConventionTxt(v){
+  var n=Number(v||0);
+  if(n>0) return "Crédit disponible";
+  if(n<0) return "Dette client";
+  return "Aucun solde";
+}
 function cliAlertes(c){
   var a=[];
   if(!c) return a;
@@ -1232,6 +1238,14 @@ function doEncaisser(){
   var isOnAccount=hasModeCompte||C.payLignes.length===0;
   if(hasModeCompte) totalPaye=0;
   if(!C.clientId){ showToast("Client obligatoire pour encaisser la vente","#ef4444"); return; }
+
+  var soldeUtilise=r2(C.payLignes.reduce(function(s,l){ return s+(l.mode==="Solde"?(parseFloat(l.montant)||0):0); },0));
+  var cli=DB.clients[C.clientId]||null;
+  var soldeDispo=r2((cli&&cli.solde)||0);
+  if(soldeUtilise>0 && soldeDispo<soldeUtilise){
+    showToast("Solde client insuffisant (disponible: "+eur(soldeDispo)+")","#ef4444");
+    return;
+  }
 
   setPending("encaisser",true);
   refreshPayZone();
@@ -1870,7 +1884,7 @@ function openFiche(id){
   if(c.cgv) h+='<span class="clr-tag" style="background:#d1fae5;color:#065f46;">✓ CGV</span>';
   h+='</div></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">';
-  [[eur(c.solde||0),"Solde compte",sc],[eur(ca),"CA total","#1d4ed8"],[eur(imp),"Impayés","#ef4444"],[cf.length+"","Factures","#8b5cf6"]].forEach(function(x){
+  [[eur(c.solde||0),"Solde client",sc],[eur(ca),"CA total","#1d4ed8"],[eur(imp),"Impayés","#ef4444"],[cf.length+"","Factures","#8b5cf6"]].forEach(function(x){
     h+='<div style="background:#f8fafc;border-radius:9px;padding:8px 10px;text-align:center;"><div style="font-size:15px;font-weight:900;color:'+x[2]+';">'+x[0]+'</div><div style="font-size:10px;color:#94a3b8;font-weight:700;">'+x[1]+'</div></div>';
   });
   h+='</div></div>';
@@ -1983,8 +1997,9 @@ function imprimerReleve(clientId){
     +'<div><div style="font-weight:900;font-size:15px;">'+c.prenom+' '+c.nom+'</div>'
     +'<div style="font-size:11px;color:#64748b;">'+c.tel+(c.email?' · '+c.email:'')+'</div></div>'
     +'<div style="text-align:right;">'
-    +'<div style="font-size:11px;color:#64748b;">Solde compte</div>'
+    +'<div style="font-size:11px;color:#64748b;">Solde client</div>'
     +'<div style="font-weight:900;font-size:16px;color:'+((c.solde||0)<0?"#ef4444":"#10b981")+';">'+(c.solde>0?"+":"")+eur(c.solde||0)+'</div>'
+    +'<div style="font-size:10px;color:#94a3b8;margin-top:2px;">'+soldeConventionTxt(c.solde)+'</div>'
     +'<div style="font-size:11px;color:#64748b;">CA total: '+eur(ca)+'</div>'
     +'</div></div>'
     +'<table style="width:100%;border-collapse:collapse;">'

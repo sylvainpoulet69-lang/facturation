@@ -95,6 +95,14 @@ function findFactureRow(factureId){
   }
   return null;
 }
+function getClientSolde(clientId){
+  if(!clientId) return null;
+  var data=sh("Clients").getDataRange().getValues();
+  for(var i=1;i<data.length;i++){
+    if(String(data[i][0]||"").trim()===String(clientId).trim()) return round2(num(data[i][6]));
+  }
+  return null;
+}
 function updateClientSoldeByDelta(clientId, delta, updatedAt){
   if(!clientId || !delta) return null;
   var s=sh("Clients");
@@ -123,6 +131,15 @@ function factureTotalsFromData(factureId, lData, pData){
   }
   total=round2(total); paye=round2(paye);
   return {total:total,paye:paye,reste:round2(total-paye)};
+}
+function isAvoirFactureRow(fRow, lData){
+  if(!fRow) return false;
+  var statut=String(fRow[4]||"").trim().toLowerCase();
+  if(statut!=="avoir") return false;
+  var factureId=String(fRow[0]||"").trim();
+  var totals=factureTotalsFromData(factureId,lData||sh("Lignes").getDataRange().getValues(),[]);
+  if(totals.total<0) return true;
+  return /^Avoir de\s+/i.test(String(fRow[5]||""));
 }
 function allocationAvoir(montantAvoir, resteFacture){
   var montant=round2(Math.max(0,montantAvoir));
@@ -420,15 +437,28 @@ function createFacture(body){
     totalTtc=Math.round(totalTtc*100)/100;
 
     var payeTotal=0;
+    var soldeConsomme=0;
+    var payRows=[];
     (f.paiements||[]).forEach(function(p){
       var mode=String(p.mode||"CB");
       if(mode==="En compte") return;
       var montant=num(p.montant);
       payeTotal+=montant;
-      sh("Paiements").appendRow([uid("pay"),id,f.clientId||"",p.date||today(),p.heure||heure(),
+      if(mode==="Solde") soldeConsomme=round2(soldeConsomme+montant);
+      payRows.push([uid("pay"),id,f.clientId||"",p.date||today(),p.heure||heure(),
         montant,mode,p.staff||"",p.note||"",ts]);
     });
     payeTotal=Math.round(payeTotal*100)/100;
+
+    if(f.clientId && soldeConsomme>0){
+      var soldeDisponible=getClientSolde(f.clientId);
+      if(soldeDisponible===null) return json({ok:false,error:"Client non trouvé"});
+      if(soldeDisponible<soldeConsomme) return json({ok:false,error:"Solde client insuffisant"});
+    }
+    payRows.forEach(function(row){ sh("Paiements").appendRow(row); });
+    if(f.clientId && soldeConsomme>0){
+      updateClientSoldeByDelta(f.clientId,-soldeConsomme,ts);
+    }
 
     if(f.clientId && String(f.saleMode||"").toLowerCase()==="en_compte"){
       var dette=Math.max(0,Math.round((totalTtc-payeTotal)*100)/100);
@@ -486,8 +516,16 @@ function addPaiement(body){
       }
     }
     var ts=now();
+    var montant=num(p.montant);
+    var mode=p.mode||"CB";
+    if(mode==="Solde" && montant>0){
+      var soldeDisponible=getClientSolde(p.clientId);
+      if(soldeDisponible===null) return json({ok:false,error:"Client non trouvé"});
+      if(soldeDisponible<montant) return json({ok:false,error:"Solde client insuffisant"});
+    }
     sh("Paiements").appendRow([uid("pay"),p.factureId,p.clientId||"",p.date||today(),p.heure||heure(),
-      num(p.montant),p.mode||"CB",p.staff||"",p.note||"",ts]);
+      montant,mode,p.staff||"",p.note||"",ts]);
+    if(mode==="Solde" && p.clientId && montant>0) updateClientSoldeByDelta(p.clientId,-montant,ts);
     var newStatut=recalcStatut(p.factureId);
     updateFacture({id:p.factureId,statut:newStatut});
     if(requestId) saveRequestLog(requestId,"addPaiement",p.factureId);
@@ -529,7 +567,8 @@ function createAvoir(body){
   if(!origF) return json({ok:false,error:"Facture non trouvée"});
 
   var statutOrig=String(origF[4]||"").toLowerCase();
-  if(statutOrig==="avoir"||statutOrig==="annulée") return json({ok:false,error:"Cette facture ne peut pas recevoir d'avoir"});
+  if(statutOrig==="annulée") return json({ok:false,error:"Cette facture ne peut pas recevoir d'avoir"});
+  if(isAvoirFactureRow(origF,lData)) return json({ok:false,error:"Impossible de créer un avoir depuis un avoir"});
 
   var totals=factureTotalsFromData(factureId,lData,pData);
   if(totals.reste<=0) return json({ok:false,error:"La facture est déjà soldée"});
