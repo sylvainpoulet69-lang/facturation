@@ -599,6 +599,14 @@ function api(payload, cb, errCb){
   });
 }
 
+function formatAuthError(err){
+  var msg=String(err||'Erreur').trim();
+  if(msg==='Session requise') return 'Session requise — reconnectez-vous puis réessayez.';
+  if(msg==='Session expirée') return 'Session expirée — reconnectez-vous puis réessayez.';
+  if(msg==='Non autorisé') return 'Non autorisé — vérifiez le Token API (APP_TOKEN).';
+  return msg;
+}
+
 function syncAll(){
   api({action:"listClients"}, function(d){
     if(d&&d.ok&&d.clients){
@@ -2406,8 +2414,8 @@ function doSaveParams(){
   if(BACKEND_URL){
     api({action:"saveConfig",config:updCfg},function(d){
       if(d&&d.ok){ showToast("Paramètres enregistrés dans Google Sheets ✓"); renderParams(); }
-      else { showToast("Erreur sync paramètres","#f59e0b"); renderParams(); }
-    }, function(){ showToast("Erreur sync paramètres","#f59e0b"); renderParams(); });
+      else { showToast("Erreur sync paramètres: "+formatAuthError(d&&d.error),"#f59e0b"); renderParams(); }
+    }, function(err){ showToast("Erreur sync paramètres: "+formatAuthError(err),"#f59e0b"); renderParams(); });
   } else {
     showToast("Paramètres enregistrés localement");
     renderParams();
