@@ -80,6 +80,46 @@ function heure(){ return Utilities.formatDate(new Date(), "Europe/Paris", "HH:mm
 function uid(p) { return (p||"id")+"_"+Date.now()+"_"+Math.floor(Math.random()*9999); }
 function num(v) { var n=parseFloat(String(v||0).replace(",",".")); return isFinite(n)?n:0; }
 function round2(v){ return Math.round(num(v)*100)/100; }
+function hasPriceModeMarker(notes, mode){
+  var m=String(mode||"TTC").trim().toUpperCase();
+  return new RegExp("\\[PRICE_MODE:"+m+"\\]","i").test(String(notes||""));
+}
+function resolveFacturePriceMode(fRow, lData, pData){
+  var notes=String((fRow&&fRow[5])||"");
+  if(hasPriceModeMarker(notes,"TTC")) return "TTC";
+  if(hasPriceModeMarker(notes,"HT")) return "HT";
+
+  var fid=String((fRow&&fRow[0])||"");
+  if(!fid) return "TTC";
+  var totalTtc=0,totalHtLegacy=0,paye=0;
+  for(var i=1;i<lData.length;i++){
+    if(String(lData[i][1]||"")!==fid) continue;
+    var qte=num(lData[i][4])||1;
+    var tva=parsePercent(lData[i][9],20);
+    var coef=1+tva/100;
+    var unit=num(lData[i][6]||lData[i][5]);
+    var remisePct=num(lData[i][7]);
+    var remiseEur=num(lData[i][8]);
+
+    var ttcUnit=Math.max(0,unit-unit*remisePct/100-remiseEur);
+    totalTtc+=ttcUnit*qte;
+
+    var ht=Math.max(0,(unit*qte*(1-remisePct/100)-remiseEur*qte));
+    totalHtLegacy+=ht*coef;
+  }
+  for(var j=1;j<pData.length;j++){
+    if(String(pData[j][1]||"")===fid) paye+=num(pData[j][5]);
+  }
+  totalTtc=round2(totalTtc); totalHtLegacy=round2(totalHtLegacy); paye=round2(paye);
+  if(totalTtc===totalHtLegacy) return "TTC";
+  if(paye>totalTtc && paye<=totalHtLegacy) return "HT";
+  var enCompte=notes.match(/\[EN_COMPTE\]\s*dette initiale=([0-9.,-]+)/i);
+  if(enCompte){
+    var dette=num(enCompte[1]);
+    if(Math.abs(dette-totalHtLegacy)<Math.abs(dette-totalTtc)) return "HT";
+  }
+  return "TTC";
+}
 function bool(v){ return v===true||v==="OUI"||v==="true"; }
 function parsePercent(v, fallback){
   if(v===null||v===undefined) return fallback;
@@ -135,12 +175,27 @@ function updateClientSoldeByDelta(clientId, delta, updatedAt){
   return null;
 }
 function factureTotalsFromData(factureId, lData, pData){
+  var fRow=null;
+  var fData=sh("Factures").getDataRange().getValues();
+  for(var fr=1;fr<fData.length;fr++){
+    if(String(fData[fr][0]||"").trim()===String(factureId).trim()) { fRow=fData[fr]; break; }
+  }
+  var mode=resolveFacturePriceMode(fRow,lData,pData);
   var total=0;
   for(var i=1;i<lData.length;i++){
     if(lData[i][1]!==factureId) continue;
-    var pu=num(lData[i][6]||lData[i][5]); var qte=num(lData[i][4])||1;
-    var ht=pu*qte*(1-num(lData[i][7])/100)-num(lData[i][8])*qte;
-    total+=ht*(1+num(lData[i][9])/100);
+    var pu=num(lData[i][6]||lData[i][5]);
+    var qte=num(lData[i][4])||1;
+    var remisePct=num(lData[i][7]);
+    var remiseEur=num(lData[i][8]);
+    var coef=1+parsePercent(lData[i][9],20)/100;
+    if(mode==="HT"){
+      var ht=pu*qte*(1-remisePct/100)-remiseEur*qte;
+      total+=Math.max(0,ht)*coef;
+    }else{
+      var ttcUnit=Math.max(0,pu-pu*remisePct/100-remiseEur);
+      total+=ttcUnit*qte;
+    }
   }
   var paye=0;
   for(var j=1;j<pData.length;j++){
@@ -496,6 +551,9 @@ function createFacture(body){
     }
     var id=genFactureId(); var ts=now();
     var factureNotes=f.notes||"";
+    if(!hasPriceModeMarker(factureNotes,"TTC") && !hasPriceModeMarker(factureNotes,"HT")){
+      factureNotes=addFactureNote(factureNotes,"[PRICE_MODE:TTC]");
+    }
     sh("Factures").appendRow([id,f.clientId||"",f.date||today(),f.echeance||f.date||today(),
       f.statut||"impayée",factureNotes,f.staff||"",ts,ts,f.fromCaisse?"OUI":"NON"]);
     (f.lignes||[]).forEach(function(l){
@@ -506,8 +564,10 @@ function createFacture(body){
     (f.lignes||[]).forEach(function(l){
       var qte=num(l.qte)||1;
       var pu=num(l.prixSaisi||l.pu);
-      var ht=pu*qte*(1-num(l.remisePct||0)/100)-num(l.remiseEur||0)*qte;
-      totalTtc+=ht*(1+parsePercent(l.tva,20)/100);
+      var remisePct=num(l.remisePct||0);
+      var remiseEur=num(l.remiseEur||0);
+      var ttcUnit=Math.max(0,pu-pu*remisePct/100-remiseEur);
+      totalTtc+=ttcUnit*qte;
     });
     totalTtc=Math.round(totalTtc*100)/100;
 
@@ -787,7 +847,7 @@ function getStats(){
   }
   return json({ok:true,stats:{caJour:Math.round(caJour*100)/100,caMois:Math.round(caMois*100)/100,
     caTotal:Math.round(caTotal*100)/100,nbRetard:nbRetard,impaye:impaye,
-    nbFactures:Math.max(0,fData.length-1),nbClients:Math.max(0,sh("Clients").getLastRow()-1)}});
+    nbFactures:Math.max(0,fData.filter(function(r,i){return i>0 && String(r[4]||"").toLowerCase()!=="avoir";}).length),nbClients:Math.max(0,sh("Clients").getLastRow()-1)}});
 }
 
 // HELPERS INTERNES

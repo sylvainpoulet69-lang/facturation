@@ -808,17 +808,48 @@ function defaultTva(){
   return (raw!==undefined && raw!==null && String(raw).trim()!=="") ? raw : 20;
 }
 
-function calcLigne(l){
-  var prixTtcUnit=Math.max(0,parseFloat(l.prixSaisi)||0);
+function facturePriceMode(f){
+  var notes=String((f&&f.notes)||"");
+  if(/\[PRICE_MODE:TTC\]/i.test(notes)) return "TTC";
+  if(/\[PRICE_MODE:HT\]/i.test(notes)) return "HT";
+  var totalTtc=0,totalHtLegacy=0;
+  (f&&f.lignes||[]).forEach(function(l){
+    var qte=Math.max(0,parseFloat(l.qte)||0);
+    var pu=Math.max(0,parseFloat(l.prixSaisi)||parseFloat(l.pu)||0);
+    var remisePct=Math.max(0,Math.min(100,parseFloat(l.remisePct)||0));
+    var remiseEur=Math.max(0,parseFloat(l.remiseEur)||0);
+    var coef=1+(asPct(l.tva,20)/100);
+    totalTtc+=Math.max(0,pu-pu*remisePct/100-remiseEur)*qte;
+    totalHtLegacy+=Math.max(0,pu*qte*(1-remisePct/100)-remiseEur*qte)*coef;
+  });
+  totalTtc=r2(totalTtc); totalHtLegacy=r2(totalHtLegacy);
+  var paye=r2(((f&&f.paiements)||[]).reduce(function(s,p){return s+(+p.montant||0);},0));
+  if(totalTtc===totalHtLegacy) return "TTC";
+  if(paye>totalTtc && paye<=totalHtLegacy) return "HT";
+  var enCompte=notes.match(/\[EN_COMPTE\]\s*dette initiale=([0-9.,-]+)/i);
+  if(enCompte){
+    var dette=parseFloat(String(enCompte[1]||"0").replace(",","."))||0;
+    if(Math.abs(dette-totalHtLegacy)<Math.abs(dette-totalTtc)) return "HT";
+  }
+  return "TTC";
+}
+
+function calcLigne(l, priceMode){
+  var pu=Math.max(0,parseFloat(l.prixSaisi)||parseFloat(l.pu)||0);
   var qte=Math.max(0,parseFloat(l.qte)||0);
   var remisePct=Math.max(0,Math.min(100,parseFloat(l.remisePct)||0));
   var remiseEurUnit=Math.max(0,parseFloat(l.remiseEur)||0);
+  var coef=1+(asPct(l.tva,20)/100);
 
-  var prixRemisePctUnit=prixTtcUnit*(remisePct/100);
-  var prixTtcNetUnit=Math.max(0,prixTtcUnit-prixRemisePctUnit-remiseEurUnit);
-  var ttc=r2(prixTtcNetUnit*qte);
-  var tvaPct=asPct(l.tva,20);
-  var coef=1+(tvaPct/100);
+  var ttc;
+  if(priceMode==="HT"){
+    var htLegacy=Math.max(0,pu*qte*(1-remisePct/100)-remiseEurUnit*qte);
+    ttc=r2(htLegacy*coef);
+  }else{
+    var prixRemisePctUnit=pu*(remisePct/100);
+    var prixTtcNetUnit=Math.max(0,pu-prixRemisePctUnit-remiseEurUnit);
+    ttc=r2(prixTtcNetUnit*qte);
+  }
   var ht=coef>0?r2(ttc/coef):ttc;
   var tva=r2(ttc-ht);
   return {ht:ht, tva:tva, ttc:ttc};
@@ -826,10 +857,11 @@ function calcLigne(l){
 
 function calcF(f){
   var ht=0,tva=0;
-  (f.lignes||[]).forEach(function(l){ var c=calcLigne(l); ht+=c.ht; tva+=c.tva; });
+  var mode=facturePriceMode(f);
+  (f.lignes||[]).forEach(function(l){ var c=calcLigne(l,mode); ht+=c.ht; tva+=c.tva; });
   var ttc=r2(ht+tva);
   var paye=r2((f.paiements||[]).reduce(function(s,p){return s+(+p.montant||0);},0));
-  return {ht:r2(ht),tva:r2(tva),ttc:ttc,paye:paye,reste:r2(ttc-paye)};
+  return {ht:r2(ht),tva:r2(tva),ttc:ttc,paye:paye,reste:r2(ttc-paye),mode:mode};
 }
 
 function joursRetard(echeance){
@@ -1449,7 +1481,7 @@ function showTicket(f){
   h+='<div class="t-row"><span class="t-key">Staff</span><span class="t-val">'+esc(f.staff)+'</span></div>';
   h+='<hr class="t-sep"/>';
   (f.lignes||[]).forEach(function(l){
-    var lc=calcLigne(l);
+    var lc=calcLigne(l,c.mode);
     h+='<div class="t-row"><span>'+(l.emoji||"")+' '+esc(l.desc)+' ×'+l.qte+'</span><span class="t-val">'+eur(lc.ttc)+'</span></div>';
   });
   h+='<hr class="t-sep"/>';
@@ -1582,7 +1614,7 @@ function renderFactureDetail(f){
   ["","Article","Qté","Prix unit.","Remise","TVA","Total TTC"].forEach(function(col){ h+='<th>'+col+'</th>'; });
   h+='</tr></thead><tbody>';
   (f.lignes||[]).forEach(function(l){
-    var lc=calcLigne(l);
+    var lc=calcLigne(l,c.mode);
     h+='<tr style="cursor:default;"><td>'+esc(l.emoji||"")+'</td><td style="font-weight:600;">'+esc(l.desc)+'</td>'
       +'<td>'+l.qte+'</td><td>'+eur(l.prixSaisi)+'</td>'
       +'<td style="color:#10b981;">'+(l.remisePct>0||l.remiseEur>0?"-"+(l.remisePct?l.remisePct+"%":"")+(l.remiseEur?eur(l.remiseEur):""):"—")+'</td>'
@@ -1685,7 +1717,7 @@ function imprimerFacture(fid){
   var w=window.open("","_blank","width=900,height=700");
   if(!w){ showToast("Popup bloquée: autorisez les popups pour ouvrir le PDF","#ef4444"); return; }
   var lignesH=(f.lignes||[]).map(function(l){
-    var lc=calcLigne(l);
+    var lc=calcLigne(l,c.mode);
     return '<tr>'
       +'<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;">'+(l.emoji||"")+" "+l.desc+'</td>'
       +'<td style="padding:8px 10px;text-align:center;border-bottom:1px solid #f1f5f9;">'+l.qte+'</td>'
@@ -1817,7 +1849,7 @@ function doCreateAvoir(fid){
   });
 }
 
-function openFactureDetail(fid){ nav("factures"); setTimeout(function(){ P.selFacId=fid; renderFactures(); },100); }
+function openFactureDetail(fid){ P.facFlt='tous'; P.facQ=''; nav('factures'); setTimeout(function(){ P.selFacId=fid; renderFactures(); var row=document.getElementById('frow-'+fid); if(row) row.scrollIntoView({behavior:'smooth',block:'center'}); },120); }
 
 // ================================================================
 // RELANCES
@@ -2037,7 +2069,9 @@ function openFiche(id){
   // Historique factures
   h+='<div style="margin-bottom:14px;"><div class="lbl" style="margin-bottom:6px;">Historique factures</div>';
   if(!cf.length) h+='<div style="text-align:center;padding:14px;color:#94a3b8;font-size:12px;background:#f8fafc;border-radius:9px;">Aucune facture</div>';
-  cf.sort(function(a,b){return (b.date||"").localeCompare(a.date||"");}).slice(0,8).forEach(function(f){
+  cf.sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
+  h+='<div style="max-height:min(52vh,420px);overflow:auto;padding-right:4px;">';
+  cf.forEach(function(f){
     var fc=calcF(f);
     h+='<div style="padding:9px 13px;background:#f8fafc;border-radius:9px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" data-open-facture="'+esc(f.id)+'">';
     h+='<div><div style="font-weight:700;font-size:12px;color:#1d4ed8;">'+esc(f.id)+'</div>';
@@ -2045,7 +2079,7 @@ function openFiche(id){
     h+='<div style="display:flex;gap:7px;align-items:center;">'+bdgHTML(displayStatutFacture(f))+'<span style="font-weight:800;">'+eur(fc.ttc)+'</span></div>';
     h+='</div>';
   });
-  h+='</div>';
+  h+='</div></div>';
   // Actions
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
   if(c.email) h+='<button class="btn btn-primary btn-sm" data-client-action="email" data-client-id="'+esc(id)+'">✉️ Email</button>';
@@ -2304,7 +2338,7 @@ function renderDashboard(){
     h+='<div class="kpi" style="border-left-color:'+x[3]+';"><div class="kpi-ico">'+x[2]+'</div><div class="kpi-val" style="color:'+x[3]+';">'+x[0]+'</div><div class="kpi-lbl">'+x[1]+'</div></div>';
   });
   h+='</div>';
-  var sTot=DB.factures.length;
+  var sTot=DB.factures.filter(function(f){return displayStatutFacture(f)!=="avoir";}).length;
   var sPaid=DB.factures.filter(function(f){return displayStatutFacture(f)==="payée";}).length;
   var sUnpaid=DB.factures.filter(function(f){return displayStatutFacture(f)==="impayée";}).length;
   var sPartial=DB.factures.filter(function(f){return displayStatutFacture(f)==="partiellement payée";}).length;
