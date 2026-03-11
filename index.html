@@ -786,13 +786,19 @@ function defaultTva(){
 }
 
 function calcLigne(l){
-  var base=l.prixSaisi*l.qte;
-  var remP=base*(l.remisePct||0)/100;
-  var remE=(l.remiseEur||0)*l.qte;
-  var ht=r2(base-remP-remE);
+  var prixTtcUnit=Math.max(0,parseFloat(l.prixSaisi)||0);
+  var qte=Math.max(0,parseFloat(l.qte)||0);
+  var remisePct=Math.max(0,Math.min(100,parseFloat(l.remisePct)||0));
+  var remiseEurUnit=Math.max(0,parseFloat(l.remiseEur)||0);
+
+  var prixRemisePctUnit=prixTtcUnit*(remisePct/100);
+  var prixTtcNetUnit=Math.max(0,prixTtcUnit-prixRemisePctUnit-remiseEurUnit);
+  var ttc=r2(prixTtcNetUnit*qte);
   var tvaPct=asPct(l.tva,20);
-  var tva=r2(ht*tvaPct/100);
-  return {ht:ht, tva:tva, ttc:r2(ht+tva)};
+  var coef=1+(tvaPct/100);
+  var ht=coef>0?r2(ttc/coef):ttc;
+  var tva=r2(ttc-ht);
+  return {ht:ht, tva:tva, ttc:ttc};
 }
 
 function calcF(f){
@@ -1223,8 +1229,7 @@ function renderPayZone(){
   var reste=r2(tot-totalPaye);
   var hasEsp=C.payLignes.some(function(l){return l.mode==="Espèces";});
   var hasModeCompte=C.payLignes.some(function(l){return l.mode==="En compte";});
-  var espV=parseFloat(C.especes)||0;
-  var rendu=hasEsp&&C.especes?r2(espV-tot):null;
+  var rendu=hasEsp?Math.max(0,r2(totalPaye-tot)):0;
   var staffOk=C.staff!=="";
   var isOnAccount=tot>0&&(hasModeCompte||C.payLignes.length===0);
   var hasClient=!!C.clientId;
@@ -1258,11 +1263,11 @@ function renderPayZone(){
   h+='</div>';
   h+='<button class="btn-add-mode" onclick="addPayL()">＋ Mode paiement</button>';
   if(hasEsp){
-    h+='<div class="especes-bloc"><div class="esp-lbl">MONTANT REMIS EN ESPÈCES</div>'
-      +'<div class="esp-row"><input class="esp-inp" type="number" value="'+(C.especes||"")+'" placeholder="'+eur(tot)+'" onchange="C.especes=this.value;refreshPayZone()"/>'
-      +'<span class="esp-rendu" style="color:'+(rendu!==null&&rendu>=0?"#10b981":"#ef4444")+'">'+(rendu!==null?eur(rendu):"—")+'</span></div>'
+    h+='<div class="especes-bloc"><div class="esp-lbl">RACCOURCIS ESPÈCES</div>'
+      +'<div class="esp-row"><span style="font-size:10px;color:#94a3b8;">Monnaie à rendre</span>'
+      +'<span class="esp-rendu" style="color:'+(rendu>0?"#10b981":"#e2e8f0")+'">'+eur(rendu)+'</span></div>'
       +'<div class="esp-shortcuts">';
-    [5,10,20,50,100].forEach(function(v){ h+='<button class="esp-sc-btn" onclick="C.especes=\''+v+'\';refreshPayZone()">'+v+'€</button>'; });
+    [5,10,20,50,100].forEach(function(v){ h+='<button class="esp-sc-btn" onclick="addEspecesRaccourci('+v+')">'+v+'€</button>'; });
     h+='</div></div>';
   }
   if(reste>0){
@@ -1281,6 +1286,13 @@ function renderPayZone(){
 
 function refreshPayZone(){ var el=document.getElementById("pay-zone"); if(el) el.innerHTML=renderPayZone(); }
 function updPayL(i,k,v){ C.payLignes[i][k]=v; refreshPayZone(); }
+function addEspecesRaccourci(v){
+  var idx=C.payLignes.findIndex(function(l){ return l.mode==="Espèces"; });
+  if(idx===-1) return;
+  var cur=parseFloat(C.payLignes[idx].montant)||0;
+  C.payLignes[idx].montant=r2(cur+v);
+  refreshPayZone();
+}
 function addPayL(){ C.payLignes.push({mode:"CB",montant:"",note:""}); refreshPayZone(); }
 function rmPayL(i){ if(C.payLignes.length>1){ C.payLignes.splice(i,1); refreshPayZone(); } }
 function metEnCompte(reste){ if(!C.clientId){ showToast("Client requis pour une vente en compte","#ef4444"); return; } C.payLignes=[]; refreshPayZone(); }
@@ -1309,8 +1321,7 @@ function doEncaisser(){
   refreshPayZone();
 
   var hasEsp=C.payLignes.some(function(l){return l.mode==="Espèces";});
-  var espV=parseFloat(C.especes)||0;
-  var renduMonnaie=hasEsp&&C.especes?Math.max(0,r2(espV-tot)):0;
+  var renduMonnaie=hasEsp?Math.max(0,r2(totalPaye-tot)):0;
 
   var paiements=isOnAccount?[]:C.payLignes.filter(function(l){ return l.mode!=="En compte"; }).map(function(l){
     return {date:today(),heure:hhmm(),montant:r2(parseFloat(l.montant)||0),mode:l.mode,staff:C.staff,note:l.note||""};
