@@ -254,7 +254,10 @@ function getAppToken(){
   return PropertiesService.getScriptProperties().getProperty('APP_TOKEN')||'';
 }
 function isSensitiveAction(action){
-  return ['listClients','upsertClient','listProduits','upsertProduit','deleteProduit','deleteProduct','listFactures','createFacture','updateFacture','addPaiement','createAvoir','createCreditNote','creditSolde','sendRelance','sendEmail','saveConfig','getStats'].indexOf(action)!==-1;
+  return ['upsertClient','upsertProduit','deleteProduit','deleteProduct',
+          'createFacture','updateFacture','addPaiement','createAvoir',
+          'createCreditNote','creditSolde','sendRelance','sendEmail']
+          .indexOf(action)!==-1;
 }
 function generateSessionToken(staffCode){
   var token=Utilities.getUuid();
