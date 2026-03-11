@@ -1278,9 +1278,14 @@ function renderPayZone(){
   }
   if(isOnAccount) h+='<div style="font-size:11px;color:#fbbf24;font-weight:700;margin-bottom:6px;">📋 Vente en compte (impayée) : aucun paiement immédiat.</div>';
   var encaisserBusy=isPending("encaisser");
+  var montantValide=r2(totalPaye);
+  var isPaiementPartiel=montantValide>0&&montantValide<tot;
+  var actionLabel=isOnAccount
+    ?"✓ Valider vente en compte"
+    :(isPaiementPartiel?"✓ Valider paiement "+eur(montantValide):"✓ Encaisser "+eur(montantValide));
   h+='<textarea class="note-sale" rows="1" placeholder="📝 Note sur la vente…" onchange="C.note=this.value">'+esc(C.note)+'</textarea>';
   h+='<button class="btn-encaisser '+((canPay&&!encaisserBusy)?"ready":"nope")+'" '+((canPay&&!encaisserBusy)?'onclick="doEncaisser()"':'disabled')+'>'+
-    (encaisserBusy?"⏳ Encaissement…":(canPay?(isOnAccount?"✓ Valider vente en compte":"✓ Encaisser "+eur(tot)):(!staffOk?"⚠️ Connexion staff requise":"⚠️ Sélectionner un client")))+'</button>';
+    (encaisserBusy?"⏳ Encaissement…":(canPay?actionLabel:(!staffOk?"⚠️ Connexion staff requise":"⚠️ Sélectionner un client")))+'</button>';
   return h;
 }
 
