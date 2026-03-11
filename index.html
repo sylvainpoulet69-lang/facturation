@@ -490,7 +490,8 @@ var UI = {
   },
   apiInFlight: 0,
   confirmAction: null,
-  avoirOps: {}
+  avoirOps: {},
+  openClientId: null
 };
 
 // État pages
@@ -605,6 +606,44 @@ function formatAuthError(err){
   if(msg==='Session expirée') return 'Session expirée — reconnectez-vous puis réessayez.';
   if(msg==='Non autorisé') return 'Non autorisé — vérifiez le Token API (APP_TOKEN).';
   return msg;
+}
+
+function refreshClientModalIfOpen(){
+  if(!UI.openClientId) return;
+  var modal=document.getElementById("modal-client");
+  if(!modal||!modal.classList.contains("open")) return;
+  if(!DB.clients[UI.openClientId]) return;
+  openFiche(UI.openClientId);
+}
+
+function syncClientsAndFactures(done){
+  var pending=2;
+  var shouldSave=false;
+  function markDone(){
+    pending--;
+    if(pending>0) return;
+    if(shouldSave) saveLocal();
+    updateBadges();
+    if(G.page==="clients") renderClients();
+    if(["factures","relances","dashboard"].indexOf(G.page)!==-1) renderPage();
+    refreshClientModalIfOpen();
+    if(done) done();
+  }
+  api({action:"listClients"}, function(d){
+    if(d&&d.ok&&d.clients){
+      DB.clients={};
+      d.clients.forEach(function(c){ DB.clients[c.id]=c; });
+      shouldSave=true;
+    }
+    markDone();
+  }, function(){ markDone(); });
+  api({action:"listFactures"}, function(d){
+    if(d&&d.ok&&d.factures){
+      DB.factures=d.factures;
+      shouldSave=true;
+    }
+    markDone();
+  }, function(){ markDone(); });
 }
 
 function syncAll(){
@@ -934,7 +973,10 @@ function showToast(msg,color,dur){
   setTimeout(function(){ el.style.display="none"; }, dur||3200);
 }
 function openModal(id){ document.getElementById(id).classList.add("open"); }
-function closeModal(id){ document.getElementById(id).classList.remove("open"); }
+function closeModal(id){
+  document.getElementById(id).classList.remove("open");
+  if(id==="modal-client") UI.openClientId=null;
+}
 function openConfirmModal(title,msg,confirmLabel,onConfirm){
   UI.confirmAction=onConfirm;
   set("modal-gen-title","⚠️ "+title);
@@ -1481,6 +1523,7 @@ function doEncaisser(){
     C.clientId=null; C.checkoutToken=null;
     setPending("encaisser",false);
     renderCaisse();
+    syncClientsAndFactures();
   }, function(err){
     setPending("encaisser",false);
     refreshPayZone();
@@ -1729,7 +1772,8 @@ function doPayFacture(fid){
         saveLocal(); updateBadges();
         closeModal("modal-gen");
         renderFactures();
-            showToast(eur(montant)+" enregistré ✓");
+        syncClientsAndFactures();
+        showToast(eur(montant)+" enregistré ✓");
       } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
       setPending("payFacture",false);
       setBtnLoading("#modal-gen .btn-green",false);
@@ -1861,7 +1905,7 @@ function doCreateAvoir(fid){
       if((d.surplus||0)>0) msg+=" · crédit client "+eur(d.surplus);
       showToast(msg);
       delete UI.avoirOps[fid];
-      syncAll();
+      syncClientsAndFactures();
       } else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
     setPending("createAvoir",false);
   }
@@ -2074,6 +2118,7 @@ function doSaveClient(existingId){
 
 function openFiche(id){
   var c=DB.clients[id];
+  UI.openClientId=id;
   if(!c) return;
   var cf=DB.factures.filter(function(f){return f.clientId===id;});
   var ca=r2(cf.reduce(function(s,f){return s+calcF(f).paye;},0));
@@ -2149,7 +2194,7 @@ function doCreditSolde(clientId){
   if(!c) return;
   closeModal("modal-gen");
   api({action:"creditSolde",clientId:clientId,montant:montant,note:note,staff:staff},function(d){
-    if(d&&d.ok){ showToast("Solde crédité: +"+eur(montant)+" → "+eur(d.newSolde)); if(d.newSolde!==undefined) c.solde=d.newSolde; saveLocal(); openFiche(clientId); syncAll(); }
+    if(d&&d.ok){ showToast("Solde crédité: +"+eur(montant)+" → "+eur(d.newSolde)); if(d.newSolde!==undefined) c.solde=d.newSolde; saveLocal(); openFiche(clientId); syncClientsAndFactures(); }
     else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
   },function(err){ showToast("Erreur backend: "+err,"#ef4444"); });
 }
