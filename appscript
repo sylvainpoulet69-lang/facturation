@@ -3,7 +3,6 @@
 // TOUTES LES ROUTES SONT FONCTIONNELLES
 // ================================================================
 var SS_ID      = "1qWNyQZzWieV7u30pEzhEHsNG7oxt72K8Ssg1yTDGGX8"; // ← COLLE TON ID GOOGLE SHEET ICI
-var APP_SECRET = "tpcnice2026"; // ← Même valeur que dans index.html
 var ADMIN_EMAIL= "sylvainpoulet69@gmail.com"; // ← Ton email pour recevoir les relances
 
 // ================================================================
@@ -19,16 +18,18 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    checkRateLimit();
     var body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
     var action = String(body.action || "").trim();
-
-    // staffLogin n'a pas besoin de secret
-    if (action !== "staffLogin" && body.secret !== APP_SECRET) {
-      return json({ ok: false, error: "Non autorisé" });
+    var validToken=getAppToken();
+    if(action !== 'staffLogin' && body.token !== validToken){
+      return json({ ok: false, error: 'Non autorisé' });
     }
+    if(isSensitiveAction(action)) validateSession(body.sessionToken);
 
     switch (action) {
       case "staffLogin":      return staffLogin(body);
+      case "validateSession": return json({ok:true,staffCode:validateSession(body.sessionToken)});
       case "listStaff":       return listStaff();
       case "listClients":     return listClients();
       case "upsertClient":    return upsertClient(body.client);
@@ -68,7 +69,9 @@ function sh(name) {
   if (!s) throw new Error("Onglet manquant: " + name);
   return s;
 }
-function json(obj, code) {
+function json(obj) {
+  // Note: Apps Script ne supporte pas les codes HTTP custom.
+  // Les erreurs sont signalées via obj.ok = false et obj.error.
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 function now()  { return new Date().toISOString(); }
@@ -234,6 +237,36 @@ function saveRequestLog(requestId, action, resourceId){
   requestLogSheet().appendRow([rid, action||"", resourceId||"", now()]);
 }
 
+function checkRateLimit(){
+  var cache=CacheService.getScriptCache();
+  var key='ratelimit_global';
+  var count=parseInt(cache.get(key)||'0',10);
+  if(count>200){
+    throw new Error('Trop de requêtes — réessayez dans une minute');
+  }
+  cache.put(key,String(count+1),60);
+}
+// Procédure token APP_TOKEN :
+// 1) Apps Script > Paramètres du projet > Propriétés du script.
+// 2) Ajouter APP_TOKEN avec une valeur aléatoire forte (ex: Utilities.getUuid()+Utilities.getUuid()).
+// 3) Reporter ce token côté application via Paramètres > Token API (jamais dans le code source HTML).
+function getAppToken(){
+  return PropertiesService.getScriptProperties().getProperty('APP_TOKEN')||'';
+}
+function isSensitiveAction(action){
+  return ['listClients','upsertClient','listProduits','upsertProduit','deleteProduit','deleteProduct','listFactures','createFacture','updateFacture','addPaiement','createAvoir','createCreditNote','creditSolde','sendRelance','sendEmail','saveConfig','getStats'].indexOf(action)!==-1;
+}
+function generateSessionToken(staffCode){
+  var token=Utilities.getUuid();
+  CacheService.getScriptCache().put('session_'+token,String(staffCode||''),28800);
+  return token;
+}
+function validateSession(token){
+  if(!token) throw new Error('Session requise');
+  var staff=CacheService.getScriptCache().get('session_'+token);
+  if(!staff) throw new Error('Session expirée');
+  return staff;
+}
 // ================================================================
 // STAFF
 // ================================================================
@@ -245,7 +278,7 @@ function staffLogin(body) {
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
     if (String(r[0]||"").trim().toUpperCase() === code && bool(r[3])) {
-      return json({ ok: true, staff: { code:r[0], nom:r[1], role:r[2] } });
+      return json({ ok: true, staff: { code:r[0], nom:r[1], role:r[2] }, sessionToken: generateSessionToken(code) });
     }
   }
   return json({ ok: false, error: "Code staff invalide" });
@@ -558,6 +591,9 @@ function addPaiement(body){
     }
     var ts=now();
     var montant=num(p.montant);
+    if(montant<=0){
+      return json({ ok:false, error:"Le montant doit être supérieur à 0" });
+    }
     var mode=p.mode||"CB";
     if(mode==="Solde" && montant>0){
       var soldeDisponible=getClientSolde(p.clientId);
@@ -675,16 +711,8 @@ function sendRelance(body){
   for(var j=1;j<cData.length;j++){ if(cData[j][0]===clientId){client=cData[j];break;} }
   if(!client||!client[4]) return json({ok:false,error:"Email client manquant"});
   // Calculer reste
-  var total=0;
-  for(var k=1;k<lData.length;k++){
-    if(lData[k][1]!==factureId) continue;
-    var pu=num(lData[k][6]||lData[k][5]); var qte=num(lData[k][4])||1;
-    var ht=pu*qte*(1-num(lData[k][7])/100)-num(lData[k][8])*qte;
-    total+=ht*(1+num(lData[k][9])/100);
-  }
-  var paye=0;
-  for(var m=1;m<pData.length;m++){ if(pData[m][1]===factureId) paye+=num(pData[m][5]); }
-  var reste=Math.round((total-paye)*100)/100;
+  var totals=factureTotalsFromData(factureId,lData,pData);
+  var reste=totals.reste;
   // Jours de retard
   var echeance=origF[3]; var jours=0;
   if(echeance){ jours=Math.max(0,Math.floor((new Date()-new Date(echeance))/86400000)); }
@@ -741,13 +769,21 @@ function getStats(){
     caTotal+=m; if(d===tod)caJour+=m; if(d.slice(0,7)===mois)caMois+=m;
   }
   var fData=sh("Factures").getDataRange().getValues();
-  var nbRetard=0,impaye=0;
+  var lData=sh('Lignes').getDataRange().getValues();
+  var nbRetard=0;
   for(var j=1;j<fData.length;j++){
-    var st=fData[j][4];
-    if(st!=="payée"&&st!=="avoir"&&st!=="annulée") nbRetard++;
+    var st=String(fData[j][4]||'').toLowerCase();
+    if(st==='impayée') nbRetard++;
+  }
+  var impaye=0;
+  for(var k=1;k<fData.length;k++){
+    var st2=String(fData[k][4] || '').toLowerCase();
+    if(st2 === 'payée' || st2 === 'avoir' || st2 === 'annulée') continue;
+    var totals=factureTotalsFromData(String(fData[k][0]), lData, pData);
+    if(totals.reste > 0) impaye=round2(impaye + totals.reste); // round2(14.995) → 15.00
   }
   return json({ok:true,stats:{caJour:Math.round(caJour*100)/100,caMois:Math.round(caMois*100)/100,
-    caTotal:Math.round(caTotal*100)/100,nbRetard:nbRetard,
+    caTotal:Math.round(caTotal*100)/100,nbRetard:nbRetard,impaye:impaye,
     nbFactures:Math.max(0,fData.length-1),nbClients:Math.max(0,sh("Clients").getLastRow()-1)}});
 }
 
@@ -760,7 +796,7 @@ function updateClientVisite(clientId){
 }
 function updateClientSoldeCompte(clientId,paiements){
   var compte=0;
-  (paiements||[]).forEach(function(p){ if(p.mode==="Compte") compte+=num(p.montant); });
+  (paiements||[]).forEach(function(p){ if(p.mode==="En compte") compte+=num(p.montant); });
   if(!compte) return;
   var s=sh("Clients"); var data=s.getDataRange().getValues();
   for(var i=1;i<data.length;i++){
