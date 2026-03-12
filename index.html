@@ -441,6 +441,14 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
   </div>
 </div>
 
+<!-- Modal Relance -->
+<div class="modal-bg" id="modal-relance">
+  <div class="modal modal-max">
+    <div class="modal-head"><h3 id="mrel-title">🔔 Envoyer une relance</h3><button class="btn-close" onclick="closeModal('modal-relance')">✕</button></div>
+    <div class="modal-body" id="mrel-body"></div>
+  </div>
+</div>
+
 <script>
 // ================================================================
 // ⚙️ CONFIGURATION — MODIFIEZ CES DEUX LIGNES
@@ -463,7 +471,18 @@ var G = {
     email: "contact@tpcnice.fr",
     siret: "123 456 789 00012",
     tva_default: "20",
-    email_relance: "contact@tpcnice.fr"
+    email_relance: "contact@tpcnice.fr",
+    relance_from_email: "",
+    relance_reply_to: "",
+    relance_from_fallback: "OUI",
+    relance_subject_rappel: "",
+    relance_message_rappel: "",
+    relance_subject_relance: "",
+    relance_message_relance: "",
+    relance_subject_ferme: "",
+    relance_message_ferme: "",
+    relance_subject_litige: "",
+    relance_message_litige: ""
   }
 };
 
@@ -491,7 +510,9 @@ var UI = {
   apiInFlight: 0,
   confirmAction: null,
   avoirOps: {},
-  openClientId: null
+  openClientId: null,
+  relanceMeta: { primaryEmail: "", aliases: [] },
+  relanceDraft: null
 };
 
 // État pages
@@ -513,6 +534,7 @@ window.onload = function(){
   if(G.staff) updateStaffUI();
   if(produits().length === 0) setDefaultProduits();
   renderPage();
+  if(BACKEND_URL) loadRelanceMeta();
   if(BACKEND_URL && G.staff && G.sessionToken){
     api({action:'validateSession'},function(d){
       if(!(d&&d.ok)){
@@ -1843,23 +1865,149 @@ function imprimerFacture(fid){
   w.document.close();
 }
 
+function relanceTemplates(){
+  return {
+    rappel:{
+      subject:G.config.relance_subject_rappel||"Rappel de paiement — Facture {{factureId}} — {{nomClub}}",
+      message:G.config.relance_message_rappel||"Bonjour {{prenom}} {{nom}},\n\nNous vous rappelons que la facture n°{{factureId}} d'un montant de {{montant}} est due depuis le {{echeance}}.\n\nMerci de procéder au règlement.\n\nCordialement,\n{{nomClub}}"
+    },
+    relance:{
+      subject:G.config.relance_subject_relance||"Relance paiement — Facture {{factureId}} — {{nomClub}}",
+      message:G.config.relance_message_relance||"Bonjour {{prenom}} {{nom}},\n\nSans réponse de votre part concernant la facture n°{{factureId}} ({{montant}}), nous vous relançons.\n\nÉchéance dépassée de {{joursRetard}} jours.\n\nMerci de régulariser rapidement.\n\nCordialement,\n{{nomClub}}"
+    },
+    ferme:{
+      subject:G.config.relance_subject_ferme||"Relance ferme — Facture {{factureId}} — {{nomClub}}",
+      message:G.config.relance_message_ferme||"Bonjour {{prenom}} {{nom}},\n\nMalgré nos relances, la facture n°{{factureId}} ({{montant}}) reste impayée depuis {{joursRetard}} jours.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n{{nomClub}}"
+    },
+    litige:{
+      subject:G.config.relance_subject_litige||"Mise en demeure — Facture {{factureId}} — {{nomClub}}",
+      message:G.config.relance_message_litige||"Bonjour {{prenom}} {{nom}},\n\nLa facture n°{{factureId}} ({{montant}}) est impayée depuis {{joursRetard}} jours.\n\nSans règlement sous 5 jours, nous engagerons des démarches de recouvrement.\n\nCordialement,\n{{nomClub}}"
+    }
+  };
+}
+
+function loadRelanceMeta(done){
+  if(!BACKEND_URL){ if(done) done(); return; }
+  api({action:"getRelanceMeta"},function(d){
+    if(d&&d.ok){
+      UI.relanceMeta.primaryEmail=String(d.primaryEmail||"");
+      UI.relanceMeta.aliases=Array.isArray(d.aliases)?d.aliases:[];
+      if(!G.config.relance_from_email) G.config.relance_from_email=UI.relanceMeta.primaryEmail||"";
+    }
+    if(done) done();
+  },function(){ if(done) done(); });
+}
+
+function openRelanceModal(fid){
+  var f=DB.factures.find(function(x){return x.id===fid;});
+  if(!f) return;
+  var cl=f.clientId?DB.clients[f.clientId]:null;
+  if(!cl||!cl.email){ showToast("Email client manquant","#ef4444"); return; }
+  var c=calcF(f);
+  var j=joursRetardF(f);
+  var autoType=j<8?"rappel":j<16?"relance":j<31?"ferme":"litige";
+  UI.relanceDraft={
+    fid:fid,
+    type:autoType,
+    fromEmail:G.config.relance_from_email||UI.relanceMeta.primaryEmail||"",
+    replyTo:G.config.relance_reply_to||"",
+    subject:"",
+    message:""
+  };
+  renderRelanceModal();
+  openModal('modal-relance');
+}
+
+function relanceAliases(){
+  var arr=[];
+  if(UI.relanceMeta.primaryEmail) arr.push(UI.relanceMeta.primaryEmail);
+  (UI.relanceMeta.aliases||[]).forEach(function(a){ if(arr.indexOf(a)===-1) arr.push(a); });
+  return arr;
+}
+
+function renderRelanceModal(){
+  var d=UI.relanceDraft; if(!d) return;
+  var f=DB.factures.find(function(x){return x.id===d.fid;}); if(!f) return;
+  var cl=f.clientId?DB.clients[f.clientId]:null; if(!cl) return;
+  var c=calcF(f); var j=joursRetardF(f);
+  var tmpls=relanceTemplates();
+  if(d.type!=="libre"){
+    d.subject=tmpls[d.type].subject;
+    d.message=tmpls[d.type].message;
+  }
+  var aliases=relanceAliases();
+  var aliasWarn='';
+  if(!aliases.length) aliasWarn='<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:10px;">Aucune adresse alias Gmail disponible. L'adresse principale sera utilisée si possible.</div>';
+  var h='';
+  h+='<div class="form-grid form-grid-2">';
+  h+='<div class="form-row"><label class="lbl">N° facture</label><input class="inp" disabled value="'+esc(f.id)+'"/></div>';
+  h+='<div class="form-row"><label class="lbl">Client</label><input class="inp" disabled value="'+esc((cl.prenom||"")+" "+(cl.nom||""))+'"/></div>';
+  h+='<div class="form-row"><label class="lbl">Email destinataire</label><input class="inp" disabled value="'+esc(cl.email||"")+'"/></div>';
+  h+='<div class="form-row"><label class="lbl">Montant dû</label><input class="inp" disabled value="'+esc(eur(c.reste))+'"/></div>';
+  h+='<div class="form-row"><label class="lbl">Échéance</label><input class="inp" disabled value="'+esc(frDate((f.echeance||f.date),false))+'"/></div>';
+  h+='<div class="form-row"><label class="lbl">Jours de retard</label><input class="inp" disabled value="'+esc(String(j))+'"/></div>';
+  h+='</div>';
+  h+=aliasWarn;
+  h+='<div class="form-grid form-grid-2">';
+  h+='<div class="form-row"><label class="lbl">Type de relance</label><select class="inp" id="rel-type" onchange="onRelanceTypeChange()">'
+    +['rappel','relance','ferme','litige','libre'].map(function(t){return '<option value="'+t+'"'+(d.type===t?' selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+'</option>';}).join('')
+    +'</select></div>';
+  h+='<div class="form-row"><label class="lbl">Adresse d'envoi</label><select class="inp" id="rel-from">'+aliases.map(function(a){return '<option value="'+esc(a)+'"'+(d.fromEmail===a?' selected':'')+'>'+esc(a)+'</option>';}).join('')+'</select></div>';
+  h+='</div>';
+  h+='<div class="form-row"><label class="lbl">Reply-To (optionnel)</label><input class="inp" id="rel-reply-to" value="'+esc(d.replyTo||"")+'" placeholder="adresse de réponse"/></div>';
+  h+='<div class="form-row"><label class="lbl">Sujet</label><input class="inp" id="rel-subject" value="'+esc(d.subject||"")+'" '+(d.type!=="libre"?'':'')+'/></div>';
+  h+='<div class="form-row"><label class="lbl">Message</label><textarea class="inp" id="rel-message" rows="8">'+esc(d.message||"")+'</textarea></div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-bottom:10px;">Variables dispo: {{prenom}}, {{nom}}, {{factureId}}, {{montant}}, {{echeance}}, {{joursRetard}}, {{nomClub}}</div>';
+  h+='<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +'<button class="btn btn-soft" onclick="closeModal(\'modal-relance\')">Annuler</button>'
+    +'<button class="btn btn-warn" onclick="submitRelance()">📧 Envoyer</button>'
+    +'</div>';
+  set('mrel-body',h);
+}
+
+function onRelanceTypeChange(){
+  if(!UI.relanceDraft) return;
+  UI.relanceDraft.type=document.getElementById('rel-type').value;
+  renderRelanceModal();
+}
+
+function submitRelance(){
+  if(isPending('relance')||!UI.relanceDraft) return;
+  var d=UI.relanceDraft;
+  var fromSel=document.getElementById('rel-from');
+  var payload={
+    action:'sendRelance',
+    factureId:d.fid,
+    staff:G.staff?G.staff.nom:(C.staff||""),
+    relanceType:document.getElementById('rel-type').value,
+    fromEmail:fromSel?fromSel.value:'',
+    replyTo:(document.getElementById('rel-reply-to').value||'').trim(),
+    subject:(document.getElementById('rel-subject').value||'').trim(),
+    message:(document.getElementById('rel-message').value||'').trim()
+  };
+  if(!payload.staff){ showToast('Connexion staff requise','#ef4444'); openModal('modal-staff'); return; }
+  if(!payload.subject||!payload.message){ showToast('Sujet et message requis','#ef4444'); return; }
+  setPending('relance',true);
+  api(payload,function(resp){
+    setPending('relance',false);
+    if(resp&&resp.ok){
+      closeModal('modal-relance');
+      var msg='Relance envoyée ('+resp.niveau+', '+resp.jours+'j)';
+      if(resp.warning) msg+=' · '+resp.warning;
+      showToast(msg);
+      syncAll();
+    } else showToast((resp&&resp.error)||'Envoi impossible','#ef4444');
+  },function(err){ setPending('relance',false); showToast('Erreur backend: '+err,'#ef4444'); });
+}
+
 function envoyerRelance(fid){
   if(isPending("relance")) return;
   if(!BACKEND_URL){ showToast("Backend requis pour envoyer une relance","#ef4444"); return; }
   var staff=G.staff?G.staff.nom:(C.staff||"");
   if(!staff){ showToast("Connexion staff requise","#ef4444"); openModal("modal-staff"); return; }
-  var t=prompt("Type de relance: rappel / relance / ferme / litige", "rappel");
-  if(t===null) return;
-  var relanceType=String(t||"rappel").trim().toLowerCase();
-  if(["rappel","relance","ferme","litige"].indexOf(relanceType)===-1){ showToast("Type de relance invalide","#ef4444"); return; }
-  if(!confirm("Envoyer une relance ("+relanceType+") pour la facture "+fid+" ?")) return;
-  setPending("relance",true);
-  api({action:"sendRelance",factureId:fid,staff:staff,relanceType:relanceType},function(d){
-    if(d&&d.ok){ showToast("Relance envoyée ("+d.niveau+", "+d.jours+"j)"); syncAll(); }
-    else showToast("Erreur: "+(d&&d.error||"inconnue"),"#ef4444");
-    setPending("relance",false);
-  },function(err){ setPending("relance",false); showToast("Erreur backend: "+err,"#ef4444"); });
+  loadRelanceMeta(function(){ openRelanceModal(fid); });
 }
+
 
 function creerAvoir(fid){
   if(isPending("createAvoir")) return;
@@ -2481,13 +2629,32 @@ function renderParams(){
   h+='</div></div>';
 
   // Relances
+  var aliases=relanceAliases();
   h+='<div class="param-section"><h3>🔔 Relances automatiques</h3>';
   h+='<div class="form-grid form-grid-2">';
-  [["pm-email-relance","Email pour les relances",cfg.email_relance||cfg.email],
+  [["pm-email-relance","Email pour les relances (copie)",cfg.email_relance||cfg.email],
+   ["pm-rel-from","Adresse d\'envoi relances",cfg.relance_from_email||UI.relanceMeta.primaryEmail||""],
+   ["pm-rel-reply","Reply-To relances",cfg.relance_reply_to||""],
    ["pm-j1","Rappel 1 (jours)",cfg.relance_j1||"7"],["pm-j2","Relance 2 (jours)",cfg.relance_j2||"15"],["pm-j3","Relance ferme (jours)",cfg.relance_j3||"30"]].forEach(function(f){
     h+='<div class="form-row"><label class="lbl">'+f[1]+'</label><input class="inp" id="'+f[0]+'" value="'+esc(f[2]||"")+'"/></div>';
   });
-  h+='</div></div>';
+  h+='</div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-top:8px;">Adresse principale: '+esc(UI.relanceMeta.primaryEmail||"—")+'</div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-top:4px;">Alias Gmail disponibles: '+(aliases.length?esc(aliases.join(', ')):'Aucun alias détecté')+'</div>';
+  h+='<div style="margin-top:8px;"><button class="btn btn-soft btn-sm" onclick="loadRelanceMeta(function(){renderParams();showToast(\'Alias Gmail rechargés\');})">↻ Recharger alias Gmail</button></div>';
+  h+='</div>';
+
+  h+='<div class="param-section"><h3>📝 Modèles de relance</h3>';
+  h+='<div class="form-grid form-grid-2">';
+  [["pm-rsub-rappel","Sujet rappel",cfg.relance_subject_rappel||""],["pm-rsub-relance","Sujet relance",cfg.relance_subject_relance||""],["pm-rsub-ferme","Sujet ferme",cfg.relance_subject_ferme||""],["pm-rsub-litige","Sujet litige",cfg.relance_subject_litige||""]].forEach(function(f){
+    h+='<div class="form-row"><label class="lbl">'+f[1]+'</label><input class="inp" id="'+f[0]+'" value="'+esc(f[2])+'"/></div>';
+  });
+  h+='</div>';
+  [["pm-rmsg-rappel","Message rappel",cfg.relance_message_rappel||""],["pm-rmsg-relance","Message relance",cfg.relance_message_relance||""],["pm-rmsg-ferme","Message ferme",cfg.relance_message_ferme||""],["pm-rmsg-litige","Message litige",cfg.relance_message_litige||""]].forEach(function(f){
+    h+='<div class="form-row"><label class="lbl">'+f[1]+'</label><textarea class="inp" id="'+f[0]+'" rows="5">'+esc(f[2])+'</textarea></div>';
+  });
+  h+='<div style="font-size:11px;color:#64748b;">Variables: {{prenom}}, {{nom}}, {{factureId}}, {{montant}}, {{echeance}}, {{joursRetard}}, {{nomClub}}</div>';
+  h+='</div>';
 
   // Staff
   h+='<div class="param-section"><h3>👥 Staff</h3>';
@@ -2517,9 +2684,19 @@ function doSaveParams(){
     iban:document.getElementById("pm-iban").value||"",
     tva_default:(function(){ var v=document.getElementById("pm-tva-def").value; return String(v).trim()===""?"20":v; })(),
     email_relance:document.getElementById("pm-email-relance").value||"",
+    relance_from_email:document.getElementById("pm-rel-from").value||"",
+    relance_reply_to:document.getElementById("pm-rel-reply").value||"",
     relance_j1:document.getElementById("pm-j1").value||"7",
     relance_j2:document.getElementById("pm-j2").value||"15",
-    relance_j3:document.getElementById("pm-j3").value||"30"
+    relance_j3:document.getElementById("pm-j3").value||"30",
+    relance_subject_rappel:document.getElementById("pm-rsub-rappel").value||"",
+    relance_message_rappel:document.getElementById("pm-rmsg-rappel").value||"",
+    relance_subject_relance:document.getElementById("pm-rsub-relance").value||"",
+    relance_message_relance:document.getElementById("pm-rmsg-relance").value||"",
+    relance_subject_ferme:document.getElementById("pm-rsub-ferme").value||"",
+    relance_message_ferme:document.getElementById("pm-rmsg-ferme").value||"",
+    relance_subject_litige:document.getElementById("pm-rsub-litige").value||"",
+    relance_message_litige:document.getElementById("pm-rmsg-litige").value||""
   };
   var tokEl=document.getElementById("pm-app-token");
   if(tokEl){ G.appToken=(tokEl.value||"").trim(); try{ localStorage.setItem(LS.appToken,G.appToken); }catch(e){} }
