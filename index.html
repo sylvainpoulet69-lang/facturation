@@ -316,6 +316,11 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 .jours-7{background:#fef3c7;color:#92400e;}
 .jours-15{background:#fed7aa;color:#9a3412;}
 .jours-30{background:#fee2e2;color:#991b1b;}
+.rel-vars{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 12px;}
+.rel-var-btn{border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;}
+.rel-var-btn:hover{background:#eef2ff;border-color:#a5b4fc;color:#3730a3;}
+.btn-spin{display:inline-block;animation:spin 1s linear infinite;margin-right:6px;}
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 
 /* PRINT */
 @media print{
@@ -444,7 +449,7 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 <!-- Modal Relance -->
 <div class="modal-bg" id="modal-relance">
   <div class="modal modal-max">
-    <div class="modal-head"><h3 id="mrel-title">🔔 Envoyer une relance</h3><button class="btn-close" onclick="closeModal('modal-relance')">✕</button></div>
+    <div class="modal-head"><h3 id="mrel-title">🔔 Envoyer une relance</h3><button class="btn-close" onclick="closeModal(\'modal-relance\')">✕</button></div>
     <div class="modal-body" id="mrel-body"></div>
   </div>
 </div>
@@ -1880,15 +1885,15 @@ function relanceTemplates(){
     },
     relance:{
       subject:G.config.relance_subject_relance||"Relance paiement — Facture {{factureId}} — {{nomClub}}",
-      message:G.config.relance_message_relance||"Bonjour {{prenom}} {{nom}},\n\nSans réponse de votre part concernant la facture n°{{factureId}} ({{montant}}), nous vous relançons.\n\nÉchéance dépassée de {{joursRetard}} jours.\n\nMerci de régulariser rapidement.\n\nCordialement,\n{{nomClub}}"
+      message:G.config.relance_message_relance||"Bonjour {{prenom}} {{nom}},\n\nSans réponse de votre part concernant la facture n°{{factureId}} ({{montant}}), nous vous relançons.\n\nÉchéance dépassée de {{joursRetard}}.\n\nMerci de régulariser rapidement.\n\nCordialement,\n{{nomClub}}"
     },
     ferme:{
       subject:G.config.relance_subject_ferme||"Relance ferme — Facture {{factureId}} — {{nomClub}}",
-      message:G.config.relance_message_ferme||"Bonjour {{prenom}} {{nom}},\n\nMalgré nos relances, la facture n°{{factureId}} ({{montant}}) reste impayée depuis {{joursRetard}} jours.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n{{nomClub}}"
+      message:G.config.relance_message_ferme||"Bonjour {{prenom}} {{nom}},\n\nMalgré nos relances, la facture n°{{factureId}} ({{montant}}) reste impayée depuis {{joursRetard}}.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n{{nomClub}}"
     },
     litige:{
       subject:G.config.relance_subject_litige||"Mise en demeure — Facture {{factureId}} — {{nomClub}}",
-      message:G.config.relance_message_litige||"Bonjour {{prenom}} {{nom}},\n\nLa facture n°{{factureId}} ({{montant}}) est impayée depuis {{joursRetard}} jours.\n\nSans règlement sous 5 jours, nous engagerons des démarches de recouvrement.\n\nCordialement,\n{{nomClub}}"
+      message:G.config.relance_message_litige||"Bonjour {{prenom}} {{nom}},\n\nLa facture n°{{factureId}} ({{montant}}) est impayée depuis {{joursRetard}}.\n\nSans règlement sous 5 jours, nous engagerons des démarches de recouvrement.\n\nCordialement,\n{{nomClub}}"
     }
   };
 }
@@ -1932,6 +1937,55 @@ function relanceAliases(){
   return arr;
 }
 
+
+function relanceVariables(){
+  return ['prenom','nom','factureId','montant','echeance','echeanceLongue','joursRetard','nomClub'];
+}
+
+function saveRelanceDraftValues(){
+  if(!UI.relanceDraft) return;
+  var t=document.getElementById('rel-type');
+  var from=document.getElementById('rel-from');
+  var reply=document.getElementById('rel-reply-to');
+  var sub=document.getElementById('rel-subject');
+  var msg=document.getElementById('rel-message');
+  if(t) UI.relanceDraft.type=t.value;
+  if(from) UI.relanceDraft.fromEmail=from.value;
+  if(reply) UI.relanceDraft.replyTo=reply.value;
+  if(sub) UI.relanceDraft.subject=sub.value;
+  if(msg) UI.relanceDraft.message=msg.value;
+}
+
+function setRelanceActiveField(fieldId){
+  if(!UI.relanceDraft) return;
+  UI.relanceDraft.activeField=fieldId;
+}
+
+function insertRelanceVariable(varName){
+  if(isPending('relance')||!UI.relanceDraft) return;
+  var token='{{'+varName+'}}';
+  var activeId=UI.relanceDraft.activeField||'rel-message';
+  var field=document.getElementById(activeId);
+  if(!field||typeof field.selectionStart!=='number') field=document.getElementById('rel-message');
+  if(!field) return;
+  field.focus();
+  var start=field.selectionStart||0;
+  var end=field.selectionEnd||start;
+  var val=field.value||'';
+  field.value=val.slice(0,start)+token+val.slice(end);
+  var nextPos=start+token.length;
+  field.selectionStart=nextPos;
+  field.selectionEnd=nextPos;
+  if(field.id==='rel-subject') UI.relanceDraft.subject=field.value;
+  if(field.id==='rel-message') UI.relanceDraft.message=field.value;
+  UI.relanceDraft.activeField=field.id;
+}
+
+function relanceSendBtnHtml(){
+  if(isPending('relance')) return "<span class='btn-spin'>⏳</span>Envoi en cours...";
+  return "📧 Envoyer";
+}
+
 function renderRelanceModal(){
   var d=UI.relanceDraft; if(!d) return;
   var f=DB.factures.find(function(x){return x.id===d.fid;}); if(!f) return;
@@ -1942,6 +1996,7 @@ function renderRelanceModal(){
     d.subject=tmpls[d.type].subject;
     d.message=tmpls[d.type].message;
   }
+  if(!d.activeField) d.activeField='rel-message';
   var aliases=relanceAliases();
   var aliasWarn='';
   if(!aliases.length) aliasWarn='<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:10px;">Aucune adresse alias Gmail disponible. L\'adresse principale sera utilisée si possible.</div>';
@@ -1962,18 +2017,20 @@ function renderRelanceModal(){
   h+='<div class="form-row"><label class="lbl">Adresse d\'envoi</label><select class="inp" id="rel-from">'+aliases.map(function(a){return '<option value="'+esc(a)+'"'+(d.fromEmail===a?' selected':'')+'>'+esc(a)+'</option>';}).join('')+'</select></div>';
   h+='</div>';
   h+='<div class="form-row"><label class="lbl">Reply-To (optionnel)</label><input class="inp" id="rel-reply-to" value="'+esc(d.replyTo||"")+'" placeholder="adresse de réponse"/></div>';
-  h+='<div class="form-row"><label class="lbl">Sujet</label><input class="inp" id="rel-subject" value="'+esc(d.subject||"")+'" '+(d.type!=="libre"?'':'')+'/></div>';
-  h+='<div class="form-row"><label class="lbl">Message</label><textarea class="inp" id="rel-message" rows="8">'+esc(d.message||"")+'</textarea></div>';
-  h+='<div style="font-size:11px;color:#64748b;margin-bottom:10px;">Variables dispo: {{prenom}}, {{nom}}, {{factureId}}, {{montant}}, {{echeance}}, {{joursRetard}}, {{nomClub}}</div>';
+  h+='<div class="form-row"><label class="lbl">Sujet</label><input class="inp" id="rel-subject" value="'+esc(d.subject||"")+'" onfocus="setRelanceActiveField(\'rel-subject\')" onkeyup="saveRelanceDraftValues()"/></div>';
+  h+='<div class="form-row"><label class="lbl">Message</label><textarea class="inp" id="rel-message" rows="8" onfocus="setRelanceActiveField(\'rel-message\')" onkeyup="saveRelanceDraftValues()">'+esc(d.message||"")+'</textarea></div>';
+  h+='<div style="font-size:11px;color:#64748b;">Variables disponibles :</div>';
+  h+='<div class="rel-vars">'+relanceVariables().map(function(v){ return '<button type="button" class="rel-var-btn" onclick="insertRelanceVariable(\''+v+'\')">{{'+v+'}}</button>'; }).join('')+'</div>';
   h+='<div style="display:flex;gap:8px;justify-content:flex-end;">'
     +'<button class="btn btn-soft" onclick="closeModal(\'modal-relance\')">Annuler</button>'
-    +'<button class="btn btn-warn" onclick="submitRelance()">📧 Envoyer</button>'
+    +'<button class="btn btn-warn" id="rel-send-btn" onclick="submitRelance()"'+(isPending('relance')?' disabled':'')+'>'+relanceSendBtnHtml()+'</button>'
     +'</div>';
   set('mrel-body',h);
 }
 
 function onRelanceTypeChange(){
   if(!UI.relanceDraft) return;
+  saveRelanceDraftValues();
   UI.relanceDraft.type=document.getElementById('rel-type').value;
   renderRelanceModal();
 }
@@ -1981,6 +2038,7 @@ function onRelanceTypeChange(){
 function submitRelance(){
   if(isPending('relance')||!UI.relanceDraft) return;
   var d=UI.relanceDraft;
+  saveRelanceDraftValues();
   var fromSel=document.getElementById('rel-from');
   var payload={
     action:'sendRelance',
@@ -1995,16 +2053,18 @@ function submitRelance(){
   if(!payload.staff){ showToast('Connexion staff requise','#ef4444'); openModal('modal-staff'); return; }
   if(!payload.subject||!payload.message){ showToast('Sujet et message requis','#ef4444'); return; }
   setPending('relance',true);
+  renderRelanceModal();
   api(payload,function(resp){
     setPending('relance',false);
+    if(UI.relanceDraft) renderRelanceModal();
     if(resp&&resp.ok){
       closeModal('modal-relance');
-      var msg='Relance envoyée ('+resp.niveau+', '+resp.jours+'j)';
+      var msg='Relance envoyée';
       if(resp.warning) msg+=' · '+resp.warning;
       showToast(msg);
       syncAll();
     } else showToast((resp&&resp.error)||'Envoi impossible','#ef4444');
-  },function(err){ setPending('relance',false); showToast('Erreur backend: '+err,'#ef4444'); });
+  },function(err){ setPending('relance',false); if(UI.relanceDraft) renderRelanceModal(); showToast('Erreur backend: '+err,'#ef4444'); });
 }
 
 function envoyerRelance(fid){
@@ -2660,7 +2720,7 @@ function renderParams(){
   [["pm-rmsg-rappel","Message rappel",cfg.relance_message_rappel||""],["pm-rmsg-relance","Message relance",cfg.relance_message_relance||""],["pm-rmsg-ferme","Message ferme",cfg.relance_message_ferme||""],["pm-rmsg-litige","Message litige",cfg.relance_message_litige||""]].forEach(function(f){
     h+='<div class="form-row"><label class="lbl">'+f[1]+'</label><textarea class="inp" id="'+f[0]+'" rows="5">'+esc(f[2])+'</textarea></div>';
   });
-  h+='<div style="font-size:11px;color:#64748b;">Variables: {{prenom}}, {{nom}}, {{factureId}}, {{montant}}, {{echeance}}, {{joursRetard}}, {{nomClub}}</div>';
+  h+='<div style="font-size:11px;color:#64748b;">Variables: {{prenom}}, {{nom}}, {{factureId}}, {{montant}}, {{echeance}}, {{echeanceLongue}}, {{joursRetard}}, {{nomClub}}</div>';
   h+='</div>';
 
   // Staff
