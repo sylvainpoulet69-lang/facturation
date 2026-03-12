@@ -449,7 +449,7 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f1f5f
 <!-- Modal Relance -->
 <div class="modal-bg" id="modal-relance">
   <div class="modal modal-max">
-    <div class="modal-head"><h3 id="mrel-title">🔔 Envoyer une relance</h3><button class="btn-close" onclick="closeModal(\'modal-relance\')">✕</button></div>
+    <div class="modal-head"><h3 id="mrel-title">🔔 Envoyer une relance</h3><button class="btn-close" onclick="closeModal('modal-relance')">✕</button></div>
     <div class="modal-body" id="mrel-body"></div>
   </div>
 </div>
@@ -1004,9 +1004,17 @@ function showToast(msg,color,dur){
   el.style.display="block";
   setTimeout(function(){ el.style.display="none"; }, dur||3200);
 }
-function openModal(id){ document.getElementById(id).classList.add("open"); }
+function resetStaffCodeField(){
+  var input=document.getElementById("si-code");
+  if(input) input.value="";
+}
+function openModal(id){
+  if(id==="modal-staff") resetStaffCodeField();
+  document.getElementById(id).classList.add("open");
+}
 function closeModal(id){
   document.getElementById(id).classList.remove("open");
+  if(id==="modal-staff") resetStaffCodeField();
   if(id==="modal-client") UI.openClientId=null;
 }
 function openConfirmModal(title,msg,confirmLabel,onConfirm){
@@ -1118,6 +1126,7 @@ function doLogin(){
         G.sessionToken=(d.sessionToken||"").trim();
         localStorage.setItem(LS.staff,JSON.stringify(G.staff));
         localStorage.setItem(LS.session,G.sessionToken);
+        resetStaffCodeField();
         updateStaffUI();
         closeModal("modal-staff");
         showToast("Connecté : "+G.staff.nom+" ("+G.staff.role+")");
