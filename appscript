@@ -149,6 +149,30 @@ function toBusinessDate(v){
   if(frDay) return frDay[3]+"-"+frDay[2]+"-"+frDay[1];
   return "";
 }
+function parseBusinessDate(v){
+  var iso=toBusinessDate(v);
+  if(!iso) return null;
+  var d=new Date(iso+"T00:00:00");
+  return isNaN(d.getTime())?null:d;
+}
+function formatDateFrShort(v){
+  var d=parseBusinessDate(v);
+  if(!d) return "";
+  return Utilities.formatDate(d,"Europe/Paris","dd/MM/yyyy");
+}
+function formatDateFrLong(v){
+  var d=parseBusinessDate(v);
+  if(!d) return "";
+  return Utilities.formatDate(d,"Europe/Paris","d MMMM yyyy");
+}
+function formatMontantEuro(v){
+  var value=round2(num(v));
+  return value.toFixed(2).replace('.',',')+"€";
+}
+function formatJoursRetard(v){
+  var n=Math.max(0,Math.floor(num(v)));
+  return n+" "+(n===1?"jour":"jours");
+}
 
 function findFactureRow(factureId){
   if(!factureId) return null;
@@ -821,7 +845,8 @@ function sendRelance(body){
   var reste=totals.reste;
   // Jours de retard
   var echeance=origF[3]; var jours=0;
-  if(echeance){ jours=Math.max(0,Math.floor((new Date()-new Date(echeance))/86400000)); }
+  var echeanceDate=parseBusinessDate(echeance);
+  if(echeanceDate){ jours=Math.max(0,Math.floor((new Date()-echeanceDate)/86400000)); }
   // Niveau relance
   var niveau=relanceType|| (jours<8?"rappel":jours<16?"relance":jours<31?"ferme":"litige");
   var labels={rappel:"Rappel de paiement",relance:"Relance",ferme:"Relance ferme",litige:"Mise en demeure",libre:"Relance libre"};
@@ -835,24 +860,28 @@ function sendRelance(body){
   var emailClient=String(client[4]||"");
   var defaults={
     rappel:{subject:"Rappel de paiement — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nNous vous rappelons que la facture n°{{factureId}} d'un montant de {{montant}} est due depuis le {{echeance}}.\n\nMerci de procéder au règlement.\n\nCordialement,\n{{nomClub}}"},
-    relance:{subject:"Relance paiement — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nSans réponse de votre part concernant la facture n°{{factureId}} ({{montant}}), nous vous relançons.\n\nÉchéance dépassée de {{joursRetard}} jours.\n\nMerci de régulariser rapidement.\n\nCordialement,\n{{nomClub}}"},
-    ferme:{subject:"Relance ferme — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nMalgré nos relances, la facture n°{{factureId}} ({{montant}}) reste impayée depuis {{joursRetard}} jours.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n{{nomClub}}"},
-    litige:{subject:"Mise en demeure — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nLa facture n°{{factureId}} ({{montant}}) est impayée depuis {{joursRetard}} jours.\n\nSans règlement sous 5 jours, nous engagerons des démarches de recouvrement.\n\nCordialement,\n{{nomClub}}"}
+    relance:{subject:"Relance paiement — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nSans réponse de votre part concernant la facture n°{{factureId}} ({{montant}}), nous vous relançons.\n\nÉchéance dépassée de {{joursRetard}}.\n\nMerci de régulariser rapidement.\n\nCordialement,\n{{nomClub}}"},
+    ferme:{subject:"Relance ferme — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nMalgré nos relances, la facture n°{{factureId}} ({{montant}}) reste impayée depuis {{joursRetard}}.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n{{nomClub}}"},
+    litige:{subject:"Mise en demeure — Facture {{factureId}} — {{nomClub}}",message:"Bonjour {{prenom}} {{nom}},\n\nLa facture n°{{factureId}} ({{montant}}) est impayée depuis {{joursRetard}}.\n\nSans règlement sous 5 jours, nous engagerons des démarches de recouvrement.\n\nCordialement,\n{{nomClub}}"}
   };
+  var montantTxt=formatMontantEuro(reste);
+  var echeanceTxt=formatDateFrShort(echeance);
+  var joursTxt=formatJoursRetard(jours);
   var legacyCorps = jours<8
-    ? "Bonjour "+nomClient+",\n\nNous vous rappelons que la facture n°"+factureId+" d'un montant de "+reste.toFixed(2)+"€ est due depuis le "+echeance+".\n\nMerci de procéder au règlement.\n\nCordialement,\n"+nomClub
+    ? "Bonjour "+nomClient+",\n\nNous vous rappelons que la facture n°"+factureId+" d'un montant de "+montantTxt+" est due depuis le "+echeanceTxt+".\n\nMerci de procéder au règlement.\n\nCordialement,\n"+nomClub
     : jours<16
-    ? "Bonjour "+nomClient+",\n\nSans réponse de votre part concernant la facture n°"+factureId+" ("+reste.toFixed(2)+"€), nous vous relançons une seconde fois.\n\nÉchéance dépassée de "+jours+" jours.\n\nMerci de régulariser rapidement.\n\nCordialement,\n"+nomClub
+    ? "Bonjour "+nomClient+",\n\nSans réponse de votre part concernant la facture n°"+factureId+" ("+montantTxt+"), nous vous relançons une seconde fois.\n\nÉchéance dépassée de "+joursTxt+".\n\nMerci de régulariser rapidement.\n\nCordialement,\n"+nomClub
     : jours<31
-    ? "Bonjour "+nomClient+",\n\nMalgré nos relances, la facture n°"+factureId+" ("+reste.toFixed(2)+"€) reste impayée depuis "+jours+" jours.\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n"+nomClub
-    : "Bonjour "+nomClient+",\n\nLa facture n°"+factureId+" ("+reste.toFixed(2)+"€) est impayée depuis "+jours+" jours.\n\nSans règlement sous 5 jours, nous nous verrons contraints d'engager des démarches de recouvrement.\n\nCordialement,\n"+nomClub;
+    ? "Bonjour "+nomClient+",\n\nMalgré nos relances, la facture n°"+factureId+" ("+montantTxt+") reste impayée depuis "+joursTxt+".\n\nNous vous demandons de régler cette somme sous 48h.\n\nCordialement,\n"+nomClub
+    : "Bonjour "+nomClient+",\n\nLa facture n°"+factureId+" ("+montantTxt+") est impayée depuis "+joursTxt+".\n\nSans règlement sous 5 jours, nous nous verrons contraints d'engager des démarches de recouvrement.\n\nCordialement,\n"+nomClub;
   var tokens={
     prenom:prenom,
     nom:nom,
     factureId:factureId,
-    montant:reste.toFixed(2)+"€",
-    echeance:echeance||"",
-    joursRetard:String(jours),
+    montant:formatMontantEuro(reste),
+    echeance:formatDateFrShort(echeance),
+    echeanceLongue:formatDateFrLong(echeance),
+    joursRetard:formatJoursRetard(jours),
     nomClub:nomClub
   };
   function applyTpl(text){
