@@ -950,6 +950,11 @@ function joursRetard(echeance){
   return Math.max(0,Math.floor((Date.now()-new Date(echeance).getTime())/86400000));
 }
 
+function joursRetardF(f){
+  if(!f) return 0;
+  return joursRetard(f.echeance||f.date);
+}
+
 function bdgHTML(s){
   var m={
     "payée":"bdg-payee","envoyée":"bdg-envoyee","impayée":"bdg-impayee",
