@@ -122,6 +122,11 @@ function resolveFacturePriceMode(fRow, lData, pData){
   return "TTC";
 }
 function bool(v){ return v===true||v==="OUI"||v==="true"; }
+function staffActive(v){
+  if(v===true) return true;
+  var raw=String(v||"").trim().toLowerCase();
+  return ['oui','true','vrai','1','actif','x'].indexOf(raw)!==-1;
+}
 function parsePercent(v, fallback){
   if(v===null||v===undefined) return fallback;
   var raw=String(v).trim();
@@ -330,23 +335,48 @@ function validateSession(token){
 // STAFF
 // ================================================================
 // Colonnes : code | nom | role | actif
+function staffColumns(headerRow){
+  var cols={code:-1,nom:-1,role:-1,actif:-1};
+  for(var i=0;i<headerRow.length;i++){
+    var key=String(headerRow[i]||"").trim().toLowerCase();
+    if(cols.hasOwnProperty(key)) cols[key]=i;
+  }
+  if(cols.code===-1&&cols.nom===-1&&cols.role===-1&&cols.actif===-1){
+    return {ok:true,cols:{code:0,nom:1,role:2,actif:3}};
+  }
+  if(cols.code===-1||cols.nom===-1||cols.role===-1||cols.actif===-1){
+    return {ok:false,error:'Structure onglet Staff invalide'};
+  }
+  return {ok:true,cols:cols};
+}
+
 function staffLogin(body) {
   var code = String(body.code||"").trim().toUpperCase();
-  if (!code) return json({ ok: false, error: "Code requis" });
+  if (!code) return json({ ok: false, error: "Code vide" });
   var data = sh("Staff").getDataRange().getValues();
+  if(!data.length) return json({ ok:false, error:'Structure onglet Staff invalide' });
+  var map=staffColumns(data[0]);
+  if(!map.ok) return json({ ok:false, error:map.error });
+  var found=false;
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
-    if (String(r[0]||"").trim().toUpperCase() === code && bool(r[3])) {
-      return json({ ok: true, staff: { code:r[0], nom:r[1], role:r[2] }, sessionToken: generateSessionToken(code) });
+    if (String(r[map.cols.code]||"").trim().toUpperCase() === code) {
+      found=true;
+      if(!staffActive(r[map.cols.actif])) return json({ ok:false, error:'Staff inactif' });
+      return json({ ok: true, staff: { code:r[map.cols.code], nom:r[map.cols.nom], role:r[map.cols.role] }, sessionToken: generateSessionToken(code) });
     }
   }
-  return json({ ok: false, error: "Code staff invalide" });
+  if(!found) return json({ ok: false, error: "Code non trouvé" });
+  return json({ ok: false, error: "Code invalide" });
 }
 function listStaff() {
   var data = sh("Staff").getDataRange().getValues();
+  if(!data.length) return json({ ok:false, error:'Structure onglet Staff invalide' });
+  var map=staffColumns(data[0]);
+  if(!map.ok) return json({ ok:false, error:map.error });
   var res = [];
   for (var i=1;i<data.length;i++) {
-    if(data[i][0]&&bool(data[i][3])) res.push({code:data[i][0],nom:data[i][1],role:data[i][2]});
+    if(data[i][map.cols.code]&&staffActive(data[i][map.cols.actif])) res.push({code:data[i][map.cols.code],nom:data[i][map.cols.nom],role:data[i][map.cols.role]});
   }
   return json({ ok:true, staff:res });
 }

@@ -1113,8 +1113,10 @@ function doLogin(){
         showToast("Connecté : "+G.staff.nom+" ("+G.staff.role+")");
         renderPage();
       } else {
-        showToast("Code invalide","#ef4444");
+        showToast((d&&d.error)||"Code invalide","#ef4444");
       }
+    }, function(err){
+      showToast(formatAuthError(err)||"Code invalide","#ef4444");
     });
   } else {
     showToast('Connexion impossible sans backend configuré', '#ef4444');
