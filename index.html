@@ -835,6 +835,7 @@ function normalizeProduit(p){
   if(!p||typeof p!=="object") return p;
   var cat=getProdCat(p)||"autre";
   var np=Object.assign({},p);
+  np.id=String(np.id||"").trim();
   np.cat=cat;
   np.categorie=cat;
   return np;
@@ -1343,11 +1344,13 @@ function renderProdGridInner(){
 }
 
 function addProd(id){
-  var p=DB.produits.find(function(x){return x.id===id;});
+  var pid=String(id||"").trim();
+  if(!pid) return;
+  var p=DB.produits.find(function(x){return String(x.id||"").trim()===pid;});
   if(!p) return;
-  var idx=C.panier.findIndex(function(l){return l.produitId===p.id;});
+  var idx=C.panier.findIndex(function(l){return String(l.produitId||"")===pid;});
   if(idx>=0) C.panier[idx].qte++;
-  else C.panier.push({produitId:p.id,desc:p.nom,emoji:p.emoji,couleur:p.couleur,qte:1,pu:p.prix,prixSaisi:p.prix,remisePct:0,remiseEur:0,tva:asPct(p.tva,20)});
+  else C.panier.push({produitId:pid,desc:p.nom,emoji:p.emoji,couleur:p.couleur,qte:1,pu:p.prix,prixSaisi:p.prix,remisePct:0,remiseEur:0,tva:asPct(p.tva,20)});
   syncPayLignes();
   renderCaisse();
 }
