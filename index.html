@@ -558,7 +558,9 @@ function clients(){ return Object.values(DB.clients); }
 
 function loadLocal(){
   try{ DB.clients = JSON.parse(localStorage.getItem(LS.clients)) || {}; }catch(e){ DB.clients={}; }
-  try{ DB.produits= JSON.parse(localStorage.getItem(LS.produits))|| []; }catch(e){ DB.produits=[]; }
+  try{
+    DB.produits=(JSON.parse(localStorage.getItem(LS.produits))|| []).map(normalizeProduit);
+  }catch(e){ DB.produits=[]; }
   try{ DB.factures= JSON.parse(localStorage.getItem(LS.factures))|| []; }catch(e){ DB.factures=[]; }
   try{
     var s=JSON.parse(localStorage.getItem(LS.staff));
@@ -698,7 +700,7 @@ function syncAll(){
 
   api({action:"listProduits"}, function(d){
     if(d&&d.ok&&d.produits){
-      DB.produits=d.produits;
+      DB.produits=d.produits.map(normalizeProduit);
       shouldSave=true;
       if(G.page==="caisse"||G.page==="produits") shouldRender=true;
     }
@@ -807,6 +809,36 @@ function asPct(v, def){
   if(v===null||v===undefined||String(v).trim()==="") return def;
   var n=parseFloat(String(v).replace(",","."));
   return Number.isFinite(n)?n:def;
+}
+function normalizeProdCatValue(v){
+  var raw=String(v||"").toLowerCase().trim();
+  if(!raw) return "";
+  raw=raw.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  var map={
+    abonnements:"abonnement",abonnement:"abonnement",
+    cours:"cours",
+    stages:"stage",stage:"stage",
+    evenements:"evenement",evenement:"evenement",
+    locations:"location",location:"location",
+    animations:"animation",animation:"animation",
+    packs:"pack",pack:"pack",
+    boutique:"boutique",
+    libre:"libre"
+  };
+  return map[raw]||raw;
+}
+function getProdCat(p){
+  if(!p||typeof p!=="object") return "";
+  var hasLegacyCat = p.cat!==undefined && p.cat!==null && String(p.cat).trim()!=="";
+  return normalizeProdCatValue(hasLegacyCat ? p.cat : p.categorie);
+}
+function normalizeProduit(p){
+  if(!p||typeof p!=="object") return p;
+  var cat=getProdCat(p)||"autre";
+  var np=Object.assign({},p);
+  np.cat=cat;
+  np.categorie=cat;
+  return np;
 }
 
 function hasRelanceNote(f){ return /Relance /i.test(String((f&&f.notes)||"")); }
@@ -1288,7 +1320,7 @@ function renderProdGridInner(){
   var list;
   if(P.prodCat==="libre") list=[];
   else if(P.prodCat==="tous") list=DB.produits;
-  else list=DB.produits.filter(function(p){return p.cat===P.prodCat;});
+  else list=DB.produits.filter(function(p){return getProdCat(p)===P.prodCat;});
 
   var html="";
   list.forEach(function(p){
@@ -2506,13 +2538,13 @@ function imprimerReleve(clientId){
 function renderProduits(){
   var CATS_PROD=["abonnement","cours","stage","evenement","location","animation","pack","boutique","autre"];
   var cats=["tous"].concat(CATS_PROD);
-  var list=P.prodCat==="tous"?DB.produits:DB.produits.filter(function(p){return p.cat===P.prodCat;});
+  var list=P.prodCat==="tous"?DB.produits:DB.produits.filter(function(p){return getProdCat(p)===P.prodCat;});
 
   var h='<div class="page-header"><h2 class="page-title">📦 Produits ('+DB.produits.length+')</h2>'
     +'<button class="btn btn-primary" onclick="openEditProd(null)">＋ Nouveau produit</button></div>';
   h+='<div class="filters-bar">';
   cats.forEach(function(cat){
-    var nb=cat==="tous"?DB.produits.length:DB.produits.filter(function(p){return p.cat===cat;}).length;
+    var nb=cat==="tous"?DB.produits.length:DB.produits.filter(function(p){return getProdCat(p)===cat;}).length;
     h+='<button class="flt-btn'+(P.prodCat===cat?" active":"")+'" onclick="P.prodCat=\''+cat+'\';renderProduits()">'+(cat==="tous"?"Tous":cat)+' ('+nb+')</button>';
   });
   h+='</div>';
@@ -2525,7 +2557,7 @@ function renderProduits(){
     h+='<div class="prod-manage-card">';
     h+='<div class="pmc-top">';
     h+='<div class="pmc-emoji" style="background:'+p.couleur+'22;">'+esc(p.emoji||"📦")+'</div>';
-    h+='<div class="pmc-info"><div class="pmc-nom">'+esc(p.nom)+'</div><div class="pmc-cat">'+esc(p.cat)+'</div><div class="pmc-prix">'+eur(p.prix)+'</div></div>';
+    h+='<div class="pmc-info"><div class="pmc-nom">'+esc(p.nom)+'</div><div class="pmc-cat">'+esc(getProdCat(p)||"autre")+'</div><div class="pmc-prix">'+eur(p.prix)+'</div></div>';
     h+='</div>';
     h+='<div style="font-size:11px;color:#64748b;">TVA: '+p.tva+'% · HT: '+eur(p.prix/(1+p.tva/100))+'</div>';
     h+='<div class="pmc-actions">';
@@ -2541,7 +2573,8 @@ function openEditProd(id){
   var p=id?DB.produits.find(function(x){return x.id===id;}):null;
   set("mprod-title",p?"Modifier: "+p.nom:"Nouveau produit");
   var CATS_PROD=["abonnement","cours","stage","evenement","location","animation","pack","boutique","autre"];
-  var catsOpts=CATS_PROD.map(function(c){return '<option value="'+c+'"'+(p&&p.cat===c?" selected":"")+'>'+c+'</option>';}).join("");
+  var selectedCat=getProdCat(p)||"autre";
+  var catsOpts=CATS_PROD.map(function(c){return '<option value="'+c+'"'+(p&&selectedCat===c?" selected":"")+'>'+c+'</option>';}).join("");
   var COLORS=["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#6366f1"];
   var colorBtns=COLORS.map(function(cl){
     return '<button type="button" onclick="document.getElementById(\'pp-couleur\').value=\''+cl+'\';this.parentNode.querySelectorAll(\'button\').forEach(function(b){b.style.outline=\'none\'});this.style.outline=\'2px solid #0f172a\';" '
@@ -2572,7 +2605,7 @@ function doSaveProd(id){
   if(!nom||!prix){ showToast("Nom et prix requis","#ef4444"); return; }
   if(!withPending("saveProduit", function(){})) return;
   var pid=id||uid("prod");
-  var prod={id:pid,nom:nom,emoji:emoji,cat:cat,prix:prix,tva:tva,couleur:couleur};
+  var prod=normalizeProduit({id:pid,nom:nom,emoji:emoji,cat:cat,categorie:cat,prix:prix,tva:tva,couleur:couleur});
   setBtnLoading("#modal-produit .btn-green",true,"Enregistrement…");
   api({action:"upsertProduit",sessionToken:G.sessionToken||"",produit:prod},function(d){
     if(d&&d.ok){
@@ -2833,7 +2866,7 @@ function setDefaultProduits(){
     {id:"prod_011",nom:"Balles × 3",           emoji:"🟡",cat:"boutique", prix:8,  tva:20,couleur:"#eab308"},
     {id:"prod_012",nom:"Boisson Isotonique",   emoji:"🥤",cat:"boutique", prix:3.5,tva:20,couleur:"#fb923c"},
     {id:"prod_013",nom:"Animation Enfants",    emoji:"🧒",cat:"animation",prix:35, tva:20,couleur:"#ec4899"},
-  ];
+  ].map(normalizeProduit);
   saveLocal();
 }
 </script>
