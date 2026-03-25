@@ -813,24 +813,23 @@ function asPct(v, def){
 function normalizeProdCatValue(v){
   var raw=String(v||"").toLowerCase().trim();
   if(!raw) return "";
-  raw=raw.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  var map={
-    abonnements:"abonnement",abonnement:"abonnement",
-    cours:"cours",
-    stages:"stage",stage:"stage",
-    evenements:"evenement",evenement:"evenement",
-    locations:"location",location:"location",
-    animations:"animation",animation:"animation",
-    packs:"pack",pack:"pack",
-    boutique:"boutique",
-    libre:"libre"
-  };
-  return map[raw]||raw;
+  return raw.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
 function getProdCat(p){
-  if(!p||typeof p!=="object") return "";
-  var hasLegacyCat = p.cat!==undefined && p.cat!==null && String(p.cat).trim()!=="";
-  return normalizeProdCatValue(hasLegacyCat ? p.cat : p.categorie);
+  if(!p||typeof p!=="object") return "autre";
+  var cat = p.cat || p.categorie || "autre";
+  return normalizeProdCatValue(cat)||"autre";
+}
+function getProductCategories(){
+  var seen={};
+  var cats=["tous"];
+  (DB.produits||[]).forEach(function(p){
+    var cat=getProdCat(p);
+    if(cat==="libre" || seen[cat]) return;
+    seen[cat]=true;
+    cats.push(cat);
+  });
+  return cats;
 }
 function normalizeProduit(p){
   if(!p||typeof p!=="object") return p;
@@ -1188,11 +1187,6 @@ function doLogout(){
 // ================================================================
 // CAISSE
 // ================================================================
-var CATS_DEF=[
-  {id:"tous",label:"Tous"},{id:"abonnement",label:"Abonnements"},{id:"cours",label:"Cours"},
-  {id:"stage",label:"Stages"},{id:"evenement",label:"Événements"},{id:"location",label:"Location"},
-  {id:"animation",label:"Animation"},{id:"pack",label:"Packs"},{id:"boutique",label:"Boutique"}
-];
 
 function renderCaisse(){
   // Avertissement backend si pas configuré
@@ -1291,25 +1285,22 @@ function deselCli(){ C.clientId=null; C.cliQ=""; renderPage(); }
 
 // Catégories
 function renderCatsBar(){
+  var cats=getProductCategories();
+  if(P.prodCat!=="libre" && cats.indexOf(P.prodCat)===-1) P.prodCat="tous";
   var html='<div class="cats-bar">';
-  CATS_DEF.forEach(function(cat){
-    html+='<button class="cat-btn'+(P.prodCat===cat.id?" active":"")+'" onclick="P.prodCat=\''+cat.id+'\';refreshProdGrid()">'+cat.label+'</button>';
+  cats.forEach(function(cat){
+    var label=cat==="tous"?"Tous":cat.charAt(0).toUpperCase()+cat.slice(1);
+    html+='<button class="cat-btn'+(P.prodCat===cat?" active":"")+'" onclick="P.prodCat=\''+cat+'\';refreshProdGrid()">'+label+'</button>';
   });
   html+='<button class="cat-btn'+(P.prodCat==="libre"?" active":"")+'" onclick="P.prodCat=\'libre\';refreshProdGrid()">✏️ Libre</button>';
   return html+'</div>';
 }
 
 function refreshProdGrid(){
+  var catsContainer=document.querySelector("#caisse-left .cats-bar");
+  if(catsContainer) catsContainer.outerHTML=renderCatsBar();
   var el=document.getElementById("prod-grid-inner");
   if(el) el.innerHTML=renderProdGridInner();
-  // Met à jour les boutons de catégorie
-  document.querySelectorAll(".cat-btn").forEach(function(b){
-    b.classList.remove("active");
-  });
-  // Re-cherche
-  var newCats=document.querySelectorAll(".cat-btn");
-  var cats=CATS_DEF.concat([{id:"libre",label:""}]);
-  newCats.forEach(function(b,i){ if(cats[i]&&cats[i].id===P.prodCat) b.classList.add("active"); });
 }
 
 function renderProdGrid(){
@@ -1317,6 +1308,8 @@ function renderProdGrid(){
 }
 
 function renderProdGridInner(){
+  var cats=getProductCategories();
+  if(P.prodCat!=="libre" && cats.indexOf(P.prodCat)===-1) P.prodCat="tous";
   var list;
   if(P.prodCat==="libre") list=[];
   else if(P.prodCat==="tous") list=DB.produits;
@@ -2536,8 +2529,8 @@ function imprimerReleve(clientId){
 // PRODUITS
 // ================================================================
 function renderProduits(){
-  var CATS_PROD=["abonnement","cours","stage","evenement","location","animation","pack","boutique","autre"];
-  var cats=["tous"].concat(CATS_PROD);
+  var cats=getProductCategories();
+  if(cats.indexOf(P.prodCat)===-1) P.prodCat="tous";
   var list=P.prodCat==="tous"?DB.produits:DB.produits.filter(function(p){return getProdCat(p)===P.prodCat;});
 
   var h='<div class="page-header"><h2 class="page-title">📦 Produits ('+DB.produits.length+')</h2>'
@@ -2545,7 +2538,8 @@ function renderProduits(){
   h+='<div class="filters-bar">';
   cats.forEach(function(cat){
     var nb=cat==="tous"?DB.produits.length:DB.produits.filter(function(p){return getProdCat(p)===cat;}).length;
-    h+='<button class="flt-btn'+(P.prodCat===cat?" active":"")+'" onclick="P.prodCat=\''+cat+'\';renderProduits()">'+(cat==="tous"?"Tous":cat)+' ('+nb+')</button>';
+    var label=cat==="tous"?"Tous":cat.charAt(0).toUpperCase()+cat.slice(1);
+    h+='<button class="flt-btn'+(P.prodCat===cat?" active":"")+'" onclick="P.prodCat=\''+cat+'\';renderProduits()">'+label+' ('+nb+')</button>';
   });
   h+='</div>';
   if(!list.length){
@@ -2572,9 +2566,11 @@ function renderProduits(){
 function openEditProd(id){
   var p=id?DB.produits.find(function(x){return x.id===id;}):null;
   set("mprod-title",p?"Modifier: "+p.nom:"Nouveau produit");
-  var CATS_PROD=["abonnement","cours","stage","evenement","location","animation","pack","boutique","autre"];
   var selectedCat=getProdCat(p)||"autre";
-  var catsOpts=CATS_PROD.map(function(c){return '<option value="'+c+'"'+(p&&selectedCat===c?" selected":"")+'>'+c+'</option>';}).join("");
+  var cats=getProductCategories().filter(function(c){return c!=="tous";});
+  if(cats.indexOf("autre")===-1) cats.push("autre");
+  if(cats.indexOf(selectedCat)===-1) cats.push(selectedCat);
+  var catsOpts=cats.map(function(c){return '<option value="'+c+'"'+(selectedCat===c?" selected":"")+'>'+c+'</option>';}).join("");
   var COLORS=["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#6366f1"];
   var colorBtns=COLORS.map(function(cl){
     return '<button type="button" onclick="document.getElementById(\'pp-couleur\').value=\''+cl+'\';this.parentNode.querySelectorAll(\'button\').forEach(function(b){b.style.outline=\'none\'});this.style.outline=\'2px solid #0f172a\';" '
@@ -2598,7 +2594,7 @@ function doSaveProd(id){
   if(!requireBackend("enregistrer un produit")) return;
   var nom=(document.getElementById("pp-nom").value||"").trim();
   var emoji=document.getElementById("pp-emoji").value||"📦";
-  var cat=document.getElementById("pp-cat").value||"autre";
+  var cat=normalizeProdCatValue(document.getElementById("pp-cat").value)||"autre";
   var prix=parseFloat(document.getElementById("pp-prix").value)||0;
   var tva=asPct(document.getElementById("pp-tva").value,20);
   var couleur=document.getElementById("pp-couleur").value||"#3b82f6";
