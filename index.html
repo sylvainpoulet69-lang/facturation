@@ -612,40 +612,67 @@ function api(payload, cb, errCb){
   UI.apiInFlight++;
   setSyncIndicator();
 
-  var controller = new AbortController();
+  var action = String(payload.action || "");
 
-  var timer = setTimeout(function(){
-    controller.abort();
-  },15000);
+  // Ces actions écrivent dans Google Sheets :
+  // on ne met PAS de timeout dessus pour éviter qu'une opération
+  // soit enregistrée dans Google mais considérée comme échouée dans l'interface.
+  var writeActions = [
+    "upsertClient",
+    "upsertProduit",
+    "deleteProduit",
+    "deleteProduct",
+    "createFacture",
+    "updateFacture",
+    "addPaiement",
+    "createAvoir",
+    "createCreditNote",
+    "creditSolde",
+    "sendRelance",
+    "sendEmail",
+    "saveConfig"
+  ];
 
-  fetch(BACKEND_URL,{
+  var isWrite = writeActions.indexOf(action) !== -1;
+
+  var controller = null;
+  var timer = null;
+
+  // Timeout uniquement pour les lectures / synchronisations
+  if(!isWrite){
+    controller = new AbortController();
+
+    timer = setTimeout(function(){
+      controller.abort();
+    },30000);
+  }
+
+  var options = {
     method:"POST",
     headers:{
       "Content-Type":"text/plain"
     },
-    body:JSON.stringify(payload),
-    signal:controller.signal
-  })
+    body:JSON.stringify(payload)
+  };
+
+  if(controller){
+    options.signal = controller.signal;
+  }
+
+  fetch(BACKEND_URL, options)
 
   .then(function(r){
-    return r.text().then(function(txt){
-      return {
-        status:r.status,
-        text:txt
-      };
-    });
+    return r.text();
   })
 
-  .then(function(res){
-
-    var txt=String(res.text||"").trim();
+  .then(function(txt){
+    txt = String(txt || "").trim();
 
     if(!txt){
       throw new Error("Réponse vide du backend");
     }
 
-    // Google a renvoyé une page HTML au lieu du JSON
-    if(txt.charAt(0)==="<"){
+    if(txt.charAt(0) === "<"){
       throw new Error(
         "Google Apps Script a renvoyé une page HTML au lieu du JSON"
       );
@@ -654,16 +681,16 @@ function api(payload, cb, errCb){
     var d;
 
     try{
-      d=JSON.parse(txt);
+      d = JSON.parse(txt);
     }catch(e){
       throw new Error(
-        "Réponse backend invalide : "+txt.substring(0,120)
+        "Réponse backend invalide : " + txt.substring(0,120)
       );
     }
 
-    if(d && d.ok===false){
+    if(d && d.ok === false){
       if(errCb){
-        errCb(d.error||"Erreur backend");
+        errCb(d.error || "Erreur backend");
       }else if(cb){
         cb(d);
       }
@@ -676,15 +703,14 @@ function api(payload, cb, errCb){
   })
 
   .catch(function(e){
+    var msg;
 
-    var msg="Erreur backend";
-
-    if(e && e.name==="AbortError"){
-      msg="Délai dépassé : le backend n'a pas répondu sous 15 secondes";
+    if(e && e.name === "AbortError"){
+      msg = "Le backend met trop de temps à répondre";
     }else if(e && e.message){
-      msg=e.message;
+      msg = e.message;
     }else{
-      msg=String(e||"Erreur backend");
+      msg = String(e || "Erreur backend");
     }
 
     if(errCb){
@@ -695,12 +721,13 @@ function api(payload, cb, errCb){
   })
 
   .finally(function(){
+    if(timer){
+      clearTimeout(timer);
+    }
 
-    clearTimeout(timer);
-
-    UI.apiInFlight=Math.max(
+    UI.apiInFlight = Math.max(
       0,
-      UI.apiInFlight-1
+      UI.apiInFlight - 1
     );
 
     setSyncIndicator();
