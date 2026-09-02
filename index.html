@@ -538,19 +538,13 @@ window.onload = function(){
   bindDelegatedEvents();
   if(G.staff) updateStaffUI();
   if(produits().length === 0) setDefaultProduits();
+
+  // Au chargement : aucun appel Google automatique.
+  // Cela évite le sablier permanent et laisse l'application immédiatement utilisable.
+  UI.apiInFlight=0;
+  setSyncIndicator();
+
   renderPage();
-  if(BACKEND_URL) loadRelanceMeta();
-  if(BACKEND_URL && G.staff && G.sessionToken){
-    api({action:'validateSession'},function(d){
-      if(!(d&&d.ok)){
-        showToast('Session expirée, veuillez vous reconnecter', '#f59e0b');
-        doLogout();
-      }
-      syncAll();
-    },function(){ doLogout(); syncAll(); });
-  } else if(BACKEND_URL){
-    syncAll();
-  }
 };
 
 function produits(){ return DB.produits; }
@@ -780,106 +774,41 @@ function syncClientsAndFactures(done){
   }, function(){ markDone(); });
 }
 
-function syncAll(){
+function syncAll(manual){
+  manual = (manual === true);
 
   if(!BACKEND_URL){
-    showToast(
-      "Backend non configuré",
-      "#ef4444"
-    );
+    if(manual){
+      showToast("Backend non configuré","#ef4444");
+    }
     return;
   }
 
-  showToast(
-    "Synchronisation Google Sheets…",
-    "#f59e0b",
-    15000
-  );
+  // Évite les doubles synchronisations déclenchées par plusieurs clics.
+  if(UI.syncInProgress){
+    if(manual){
+      showToast("Synchronisation déjà en cours…","#f59e0b",4000);
+    }
+    return;
+  }
 
+  UI.syncInProgress=true;
+
+  // Les appels internes (après création d'un client, paiement, etc.)
+  // restent silencieux pour ne pas écraser les messages "Client créé ✓", etc.
+  if(manual){
+    showToast("Synchronisation Google Sheets…","#f59e0b",65000);
+  }
+
+  var pending=5;
   var errors=[];
   var shouldSave=false;
 
-  var tasks=[
+  function finishOne(){
+    pending--;
+    if(pending>0) return;
 
-    {
-      nom:"Clients",
-      payload:{action:"listClients"},
-      success:function(d){
-        if(d && d.ok && Array.isArray(d.clients)){
-
-          DB.clients={};
-
-          d.clients.forEach(function(c){
-            DB.clients[c.id]=c;
-          });
-
-          shouldSave=true;
-        }
-      }
-    },
-
-    {
-      nom:"Produits",
-      payload:{action:"listProduits"},
-      success:function(d){
-        if(d && d.ok && Array.isArray(d.produits)){
-
-          DB.produits=d.produits.map(normalizeProduit);
-
-          shouldSave=true;
-        }
-      }
-    },
-
-    {
-      nom:"Staff",
-      payload:{action:"listStaff"},
-      success:function(d){
-        if(d && d.ok && Array.isArray(d.staff)){
-
-          G.staffList=d.staff;
-        }
-      }
-    },
-
-    {
-      nom:"Factures",
-      payload:{action:"listFactures"},
-      success:function(d){
-        if(d && d.ok && Array.isArray(d.factures)){
-
-          DB.factures=d.factures;
-
-          shouldSave=true;
-        }
-      }
-    },
-
-    {
-      nom:"Configuration",
-      payload:{action:"getConfig"},
-      success:function(d){
-        if(d && d.ok && d.config){
-
-          Object.assign(
-            G.config,
-            d.config
-          );
-
-          var nomEl=document.getElementById("si-nom");
-
-          if(nomEl){
-            nomEl.textContent=
-              G.config.nom||"Les Acacias";
-          }
-        }
-      }
-    }
-
-  ];
-
-
-  function terminer(){
+    UI.syncInProgress=false;
 
     if(shouldSave){
       saveLocal();
@@ -887,74 +816,98 @@ function syncAll(){
 
     updateBadges();
 
+    // Toujours rafraîchir la page courante, y compris Paramètres.
     renderPage();
 
-    if(errors.length){
+    if(!manual) return;
 
+    if(errors.length){
       showToast(
         "⚠️ Sync partielle — "+errors.join(" · "),
         "#ef4444",
         12000
       );
-
     }else{
-
       showToast(
         "✅ Synchronisation réussie — "
-        +Object.keys(DB.clients).length
-        +" clients · "
-        +DB.factures.length
-        +" factures · "
-        +DB.produits.length
-        +" produits",
+        +Object.keys(DB.clients).length+" clients · "
+        +DB.factures.length+" factures · "
+        +DB.produits.length+" produits",
         "#10b981",
         7000
       );
     }
   }
 
+  function runTask(name,payload,onSuccess,attempt){
+    attempt=attempt||0;
 
-  function executer(index){
-
-    if(index>=tasks.length){
-      terminer();
-      return;
-    }
-
-    var task=tasks[index];
-
-    api(
-      task.payload,
-
-      function(d){
-
-        try{
-          task.success(d);
-        }catch(e){
-          errors.push(
-            task.nom+" : "+e.message
-          );
-        }
-
-        executer(index+1);
-      },
-
-      function(err){
-
-        errors.push(
-          task.nom+" : "+formatAuthError(err)
-        );
-
-        executer(index+1);
+    api(payload,function(d){
+      try{
+        onSuccess(d);
+      }catch(e){
+        errors.push(name+" : "+e.message);
       }
-    );
+      finishOne();
+
+    },function(err){
+      // Une réponse HTML/transitoire de Google peut arriver ponctuellement.
+      // On retente UNE fois seulement avant de déclarer l'élément en erreur.
+      if(attempt<1){
+        setTimeout(function(){
+          runTask(name,payload,onSuccess,attempt+1);
+        },500);
+        return;
+      }
+
+      errors.push(name+" : "+formatAuthError(err));
+      finishOne();
+    });
   }
 
+  // Les 5 lectures sont lancées ensemble :
+  // la synchro dure au maximum le temps de la requête la plus lente
+  // (avec un seul retry éventuel), et non 5 x 30 secondes.
+  runTask("Clients",{action:"listClients"},function(d){
+    if(d&&d.ok&&Array.isArray(d.clients)){
+      DB.clients={};
+      d.clients.forEach(function(c){
+        DB.clients[c.id]=c;
+      });
+      shouldSave=true;
+    }
+  });
 
-  // IMPORTANT :
-  // les requêtes sont maintenant faites
-  // UNE PAR UNE et non toutes en même temps.
-  executer(0);
+  runTask("Produits",{action:"listProduits"},function(d){
+    if(d&&d.ok&&Array.isArray(d.produits)){
+      DB.produits=d.produits.map(normalizeProduit);
+      shouldSave=true;
+    }
+  });
+
+  runTask("Staff",{action:"listStaff"},function(d){
+    if(d&&d.ok&&Array.isArray(d.staff)){
+      G.staffList=d.staff;
+    }
+  });
+
+  runTask("Factures",{action:"listFactures"},function(d){
+    if(d&&d.ok&&Array.isArray(d.factures)){
+      DB.factures=d.factures;
+      shouldSave=true;
+    }
+  });
+
+  runTask("Configuration",{action:"getConfig"},function(d){
+    if(d&&d.ok&&d.config){
+      Object.assign(G.config,d.config);
+
+      var nomEl=document.getElementById("si-nom");
+      if(nomEl){
+        nomEl.textContent=G.config.nom||"Les Acacias";
+      }
+    }
+  });
 }
 
 // ================================================================
@@ -2426,7 +2379,7 @@ function renderRelances(){
   }).sort(function(a,b){ return joursRetard(b.echeance)-joursRetard(a.echeance); });
 
   var h='<div class="page-header"><h2 class="page-title">🔔 Relances ('+impayees.length+')</h2>'
-    +'<button class="btn btn-soft btn-sm" onclick="syncAll()">↺ Actualiser</button></div>';
+    +'<button class="btn btn-soft btn-sm" onclick="syncAll(true)">↺ Actualiser</button></div>';
 
   if(!impayees.length){
     h+='<div style="text-align:center;padding:50px;background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);">'
@@ -3003,13 +2956,13 @@ function renderParams(){
   // Staff
   h+='<div class="param-section"><h3>👥 Staff</h3>';
   h+='<div style="font-size:13px;color:#64748b;margin-bottom:10px;">Pour ajouter/modifier le staff, éditez directement l\'onglet <strong>Staff</strong> dans Google Sheets.</div>';
-  h+='<button class="btn btn-soft btn-sm" onclick="syncAll()">↺ Recharger depuis le Sheet</button></div>';
+  h+='<button class="btn btn-soft btn-sm" onclick="syncAll(true)">↺ Recharger depuis le Sheet</button></div>';
 
   // Données
   h+='<div class="param-section"><h3>💾 Données locales</h3>';
   h+='<div style="font-size:13px;color:#64748b;margin-bottom:12px;">Clients: '+Object.keys(DB.clients).length+' · Factures: '+DB.factures.length+' · Produits: '+DB.produits.length+'</div>';
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
-  h+='<button class="btn btn-soft btn-sm" onclick="syncAll()">↺ Sync depuis Google Sheets</button>';
+  h+='<button class="btn btn-soft btn-sm" onclick="syncAll(true)">↺ Sync depuis Google Sheets</button>';
   h+='<button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;" onclick="resetLocal()">🗑️ Vider cache local</button>';
   h+='</div></div>';
   setContent(h);
