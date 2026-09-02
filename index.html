@@ -605,26 +605,104 @@ function api(payload, cb, errCb){
     if(cb) cb(null);
     return;
   }
+
   payload.sessionToken = G.sessionToken || "";
   payload.token = G.appToken || "";
+
   UI.apiInFlight++;
   setSyncIndicator();
+
+  var controller = new AbortController();
+
+  var timer = setTimeout(function(){
+    controller.abort();
+  },15000);
+
   fetch(BACKEND_URL,{
     method:"POST",
-    headers:{"Content-Type":"text/plain"},
-    body:JSON.stringify(payload)
+    headers:{
+      "Content-Type":"text/plain"
+    },
+    body:JSON.stringify(payload),
+    signal:controller.signal
   })
-  .then(function(r){ return r.json(); })
-  .then(function(d){
-    if(d && d.ok===false && errCb) errCb(d.error||"Erreur");
-    else if(cb) cb(d);
+
+  .then(function(r){
+    return r.text().then(function(txt){
+      return {
+        status:r.status,
+        text:txt
+      };
+    });
   })
+
+  .then(function(res){
+
+    var txt=String(res.text||"").trim();
+
+    if(!txt){
+      throw new Error("Réponse vide du backend");
+    }
+
+    // Google a renvoyé une page HTML au lieu du JSON
+    if(txt.charAt(0)==="<"){
+      throw new Error(
+        "Google Apps Script a renvoyé une page HTML au lieu du JSON"
+      );
+    }
+
+    var d;
+
+    try{
+      d=JSON.parse(txt);
+    }catch(e){
+      throw new Error(
+        "Réponse backend invalide : "+txt.substring(0,120)
+      );
+    }
+
+    if(d && d.ok===false){
+      if(errCb){
+        errCb(d.error||"Erreur backend");
+      }else if(cb){
+        cb(d);
+      }
+      return;
+    }
+
+    if(cb){
+      cb(d);
+    }
+  })
+
   .catch(function(e){
-    if(errCb) errCb(e.toString());
-    else if(cb) cb(null);
+
+    var msg="Erreur backend";
+
+    if(e && e.name==="AbortError"){
+      msg="Délai dépassé : le backend n'a pas répondu sous 15 secondes";
+    }else if(e && e.message){
+      msg=e.message;
+    }else{
+      msg=String(e||"Erreur backend");
+    }
+
+    if(errCb){
+      errCb(msg);
+    }else if(cb){
+      cb(null);
+    }
   })
+
   .finally(function(){
-    UI.apiInFlight=Math.max(0,UI.apiInFlight-1);
+
+    clearTimeout(timer);
+
+    UI.apiInFlight=Math.max(
+      0,
+      UI.apiInFlight-1
+    );
+
     setSyncIndicator();
   });
 }
@@ -676,20 +754,105 @@ function syncClientsAndFactures(done){
 }
 
 function syncAll(){
+
   if(!BACKEND_URL){
-    showToast("Backend non configuré","#ef4444");
+    showToast(
+      "Backend non configuré",
+      "#ef4444"
+    );
     return;
   }
 
-  showToast("Synchronisation Google Sheets…","#f59e0b",8000);
+  showToast(
+    "Synchronisation Google Sheets…",
+    "#f59e0b",
+    15000
+  );
 
-  var pending=5;
-  var shouldSave=false;
   var errors=[];
+  var shouldSave=false;
 
-  function markDone(){
-    pending--;
-    if(pending>0) return;
+  var tasks=[
+
+    {
+      nom:"Clients",
+      payload:{action:"listClients"},
+      success:function(d){
+        if(d && d.ok && Array.isArray(d.clients)){
+
+          DB.clients={};
+
+          d.clients.forEach(function(c){
+            DB.clients[c.id]=c;
+          });
+
+          shouldSave=true;
+        }
+      }
+    },
+
+    {
+      nom:"Produits",
+      payload:{action:"listProduits"},
+      success:function(d){
+        if(d && d.ok && Array.isArray(d.produits)){
+
+          DB.produits=d.produits.map(normalizeProduit);
+
+          shouldSave=true;
+        }
+      }
+    },
+
+    {
+      nom:"Staff",
+      payload:{action:"listStaff"},
+      success:function(d){
+        if(d && d.ok && Array.isArray(d.staff)){
+
+          G.staffList=d.staff;
+        }
+      }
+    },
+
+    {
+      nom:"Factures",
+      payload:{action:"listFactures"},
+      success:function(d){
+        if(d && d.ok && Array.isArray(d.factures)){
+
+          DB.factures=d.factures;
+
+          shouldSave=true;
+        }
+      }
+    },
+
+    {
+      nom:"Configuration",
+      payload:{action:"getConfig"},
+      success:function(d){
+        if(d && d.ok && d.config){
+
+          Object.assign(
+            G.config,
+            d.config
+          );
+
+          var nomEl=document.getElementById("si-nom");
+
+          if(nomEl){
+            nomEl.textContent=
+              G.config.nom||"Les Acacias";
+          }
+        }
+      }
+    }
+
+  ];
+
+
+  function terminer(){
 
     if(shouldSave){
       saveLocal();
@@ -697,105 +860,74 @@ function syncAll(){
 
     updateBadges();
 
-    // Rafraîchit toujours la page actuelle,
-    // y compris la page Paramètres
     renderPage();
 
     if(errors.length){
+
       showToast(
-        "⚠️ Erreur de synchronisation : "+errors.join(" · "),
+        "⚠️ Sync partielle — "+errors.join(" · "),
         "#ef4444",
-        10000
+        12000
       );
+
     }else{
+
       showToast(
         "✅ Synchronisation réussie — "
-        +Object.keys(DB.clients).length+" clients · "
-        +DB.factures.length+" factures · "
-        +DB.produits.length+" produits",
+        +Object.keys(DB.clients).length
+        +" clients · "
+        +DB.factures.length
+        +" factures · "
+        +DB.produits.length
+        +" produits",
         "#10b981",
         7000
       );
     }
   }
 
-  api({action:"listClients"}, function(d){
-    if(d&&d.ok&&Array.isArray(d.clients)){
-      DB.clients={};
 
-      d.clients.forEach(function(c){
-        DB.clients[c.id]=c;
-      });
+  function executer(index){
 
-      shouldSave=true;
+    if(index>=tasks.length){
+      terminer();
+      return;
     }
 
-    markDone();
+    var task=tasks[index];
 
-  }, function(err){
-    errors.push("Clients : "+formatAuthError(err));
-    markDone();
-  });
+    api(
+      task.payload,
 
+      function(d){
 
-  api({action:"listProduits"}, function(d){
-    if(d&&d.ok&&Array.isArray(d.produits)){
-      DB.produits=d.produits.map(normalizeProduit);
-      shouldSave=true;
-    }
+        try{
+          task.success(d);
+        }catch(e){
+          errors.push(
+            task.nom+" : "+e.message
+          );
+        }
 
-    markDone();
+        executer(index+1);
+      },
 
-  }, function(err){
-    errors.push("Produits : "+formatAuthError(err));
-    markDone();
-  });
+      function(err){
 
+        errors.push(
+          task.nom+" : "+formatAuthError(err)
+        );
 
-  api({action:"listStaff"}, function(d){
-    if(d&&d.ok&&Array.isArray(d.staff)){
-      G.staffList=d.staff;
-    }
-
-    markDone();
-
-  }, function(err){
-    errors.push("Staff : "+formatAuthError(err));
-    markDone();
-  });
-
-
-  api({action:"listFactures"}, function(d){
-    if(d&&d.ok&&Array.isArray(d.factures)){
-      DB.factures=d.factures;
-      shouldSave=true;
-    }
-
-    markDone();
-
-  }, function(err){
-    errors.push("Factures : "+formatAuthError(err));
-    markDone();
-  });
-
-
-  api({action:"getConfig"}, function(d){
-    if(d&&d.ok&&d.config){
-      Object.assign(G.config,d.config);
-
-      var nomEl=document.getElementById("si-nom");
-
-      if(nomEl){
-        nomEl.textContent=G.config.nom||"Les Acacias";
+        executer(index+1);
       }
-    }
+    );
+  }
 
-    markDone();
 
-  }, function(err){
-    errors.push("Config : "+formatAuthError(err));
-    markDone();
-  });
+  // IMPORTANT :
+  // les requêtes sont maintenant faites
+  // UNE PAR UNE et non toutes en même temps.
+  executer(0);
 }
 
 // ================================================================
